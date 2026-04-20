@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\SalesTransaction;
-use App\Models\Kavling;
+use App\Models\Transaction;
+use App\Models\Plot;
 use Illuminate\Http\Request;
 use App\Services\SalesTransactionService;
 use Illuminate\Support\Facades\DB;
@@ -19,86 +19,75 @@ class SalesTransactionController extends Controller
         $this->salesService = $salesService;
     }
 
-    /**
-     * Helper: ambil base query yang sudah di-scope ke owner.
-     */
     private function ownerQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return SalesTransaction::query()->where('owner_id', auth()->id());
+        return Transaction::query()->where('owner_id', auth()->id());
     }
 
     // GET all
     public function index(Request $request)
     {
-        $query = $this->ownerQuery()->with(['kavling', 'buyer', 'sales']);
+        $query = $this->ownerQuery()->with(['plot', 'buyer', 'salesStaff']);
 
-        // 1. Filter Pencarian (Kavling Blok atau Nama Pembeli)
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->whereHas('kavling', function ($qKavling) use ($search) {
-                    $qKavling->where('blok_nomor', 'like', "%{$search}%");
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('plot', function ($qPlot) use ($search) {
+                    $qPlot->where('plot_number', 'like', "%{$search}%");
                 })->orWhereHas('buyer', function ($qBuyer) use ($search) {
-                    $qBuyer->where('username', 'like', "%{$search}%");
+                    $qBuyer->where('name', 'like', "%{$search}%");
                 });
             });
         }
 
-        // 2. Filter Dropdown Exact Match
-        if ($request->filled('metode_pembayaran')) {
-            $query->where('metode_pembayaran', $request->metode_pembayaran);
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->payment_method);
         }
-        if ($request->filled('status_dp')) {
-            $query->where('status_dp', $request->status_dp);
+        if ($request->filled('dp_status')) {
+            $query->where('dp_status', $request->dp_status);
         }
-        if ($request->filled('status_penjualan')) {
-            $query->where('status_penjualan', $request->status_penjualan);
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
         }
-        if ($request->filled('sales_id')) {
-            $query->where('sales_id', $request->sales_id);
+        if ($request->filled('sales_staff_id')) {
+            $query->where('sales_staff_id', $request->sales_staff_id);
         }
-
-        // 3. Filter Range Angka (Harga Min dan Harga Max)
-        if ($request->filled('harga_min')) {
-            $query->where('grand_total', '>=', $request->harga_min);
+        if ($request->filled('price_min')) {
+            $query->where('grand_total', '>=', $request->price_min);
         }
-        if ($request->filled('harga_max')) {
-            $query->where('grand_total', '<=', $request->harga_max);
+        if ($request->filled('price_max')) {
+            $query->where('grand_total', '<=', $request->price_max);
         }
-
-        // 4. Filter Range Tanggal (Tgl Dari & Tgl Sampai)
-        if ($request->filled('tgl_dari')) {
-            $query->whereDate('tanggal_booking', '>=', $request->tgl_dari);
+        if ($request->filled('date_from')) {
+            $query->whereDate('booking_date', '>=', $request->date_from);
         }
-        if ($request->filled('tgl_sampai')) {
-            $query->whereDate('tanggal_booking', '<=', $request->tgl_sampai);
+        if ($request->filled('date_to')) {
+            $query->whereDate('booking_date', '<=', $request->date_to);
         }
 
-        // 5. Paginate result
         $limit = $request->get('limit', 10);
-        $data = $query->latest()->paginate($limit);
+        $data  = $query->latest()->paginate($limit);
 
-        // 6. Map data
         $mappedData = collect($data->items())->map(function ($item) {
             return [
                 'id'               => $item->id,
-                'nomor_transaksi'  => $item->nomor_transaksi,
-                'kavling'          => $item->kavling->blok_nomor ?? '-',
-                'pembeli'          => $item->buyer->username ?? '-',
-                'tanggal_booking'  => $item->tanggal_booking ? $item->tanggal_booking->format('Y-m-d') : null,
-                'metode_pembayaran'=> $item->metode_pembayaran,
-                'harga_jual'       => (float) $item->grand_total,
-                'total_dibayar'    => (float) $item->totalPembayaran(),
-                'sisa_piutang'     => (float) $item->sisaPembayaran(),
-                'status_dp'        => $item->status_dp,
-                'status_penjualan' => $item->status_penjualan,
-                'marketing'        => $item->sales->username ?? '-',
+                'transaction_number' => $item->transaction_number,
+                'plot'             => $item->plot->plot_number ?? '-',
+                'buyer'            => $item->buyer->name ?? '-',
+                'booking_date'     => $item->booking_date ? $item->booking_date->format('Y-m-d') : null,
+                'payment_method'   => $item->payment_method,
+                'grand_total'      => (float) $item->grand_total,
+                'total_paid'       => (float) $item->totalPaymentMade(),
+                'remaining_balance' => (float) $item->remainingBalance(),
+                'dp_status'        => $item->dp_status,
+                'status'           => $item->status,
+                'sales_staff'      => $item->salesStaff->name ?? '-',
             ];
         });
 
         return response()->json([
             'status'     => 'success',
-            'message'    => 'Data list penjualan',
+            'message'    => 'Data list transaksi',
             'data'       => $mappedData,
             'pagination' => [
                 'current_page' => $data->currentPage(),
@@ -113,7 +102,7 @@ class SalesTransactionController extends Controller
     public function show($id)
     {
         $data = $this->ownerQuery()
-            ->with(['kavling', 'buyer', 'sales', 'angsuran', 'fleksiblePayments', 'paymentHistory'])
+            ->with(['plot', 'buyer', 'salesStaff', 'installments', 'flexiblePayments', 'paymentHistories'])
             ->findOrFail($id);
 
         return response()->json($data);
@@ -123,53 +112,56 @@ class SalesTransactionController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'kavling_id'          => 'required|exists:kavling,id',
-            'buyer_id'            => 'required|exists:buyers,id',
-            'sales_id'            => 'required|exists:users,id',
-            'metode_pembayaran'   => 'required|in:cash_keras,angsuran_in_house,kpr_bank',
-            'tanggal_booking'     => 'required|date',
+            'plot_id'              => 'required|exists:plots,id',
+            'buyer_id'             => 'required|exists:buyers,id',
+            'sales_staff_id'       => 'required|exists:sales_staff,id',
+            'payment_method'       => 'required|in:full_cash,installment,bank_mortgage',
+            'booking_date'         => 'required|date',
 
-            'tipe_diskon'         => 'nullable|in:nominal,persen',
-            'promo_diskon'        => 'nullable|numeric|min:0',
-            'biaya_ppjb'          => 'nullable|numeric|min:0',
-            'biaya_shm'           => 'nullable|numeric|min:0',
-            'biaya_lain'          => 'nullable|numeric|min:0',
+            'discount_type'        => 'nullable|in:nominal,percent',
+            'discount_amount'      => 'nullable|numeric|min:0',
+            'ppjb_fee'             => 'nullable|numeric|min:0',
+            'shm_fee'              => 'nullable|numeric|min:0',
+            'other_fees'           => 'nullable|numeric|min:0',
 
-            'uang_muka_nominal'   => 'nullable|numeric|min:0',
-            'tenor'               => 'nullable|integer|min:1',
-            'tanggal_jatuh_tempo' => 'nullable|integer|min:1|max:31',
-            'status_penjualan'    => 'required|in:active,paid_off,cancel,refund',
+            'down_payment_amount'  => 'nullable|numeric|min:0',
+            'tenor_months'         => 'nullable|integer|min:1',
+            'due_day'              => 'nullable|integer|min:1|max:31',
+            'status'               => 'required|in:active,paid_off,cancelled,refunded',
+            'notes'                => 'nullable|string',
+            'booking_fee'          => 'nullable|numeric|min:0',
+            'is_unit_included'     => 'nullable|boolean',
         ]);
 
         try {
-            // Ambil harga dasar otomatis dari kavling
-            $kavling = Kavling::findOrFail($validated['kavling_id']);
-            $hargaDasar = $kavling->harga_dasar;
+            $plot      = Plot::findOrFail($validated['plot_id']);
+            $basePrice = $plot->base_price;
 
-            // Tentukan Diskon
-            $nilaiDiskonInput   = $validated['promo_diskon'] ?? 0;
-            $tipeDiskon         = $request->input('tipe_diskon', 'nominal');
+            $discountInput = $validated['discount_amount'] ?? 0;
+            $discountType  = $request->input('discount_type', 'nominal');
 
-            if ($tipeDiskon === 'persen') {
-                $promoDiskonNominal = $hargaDasar * ($nilaiDiskonInput / 100);
+            if ($discountType === 'percent') {
+                $discountNominal = $basePrice * ($discountInput / 100);
             } else {
-                $promoDiskonNominal = $nilaiDiskonInput;
+                $discountNominal = $discountInput;
             }
 
-            // Perhitungan otomatis Netto & Grand Total
-            $hargaNetto = $hargaDasar - $promoDiskonNominal;
-            $biayaPpjb  = $validated['biaya_ppjb'] ?? 0;
-            $biayaShm   = $validated['biaya_shm'] ?? 0;
-            $biayaLain  = $validated['biaya_lain'] ?? 0;
-            $grandTotal = $hargaNetto + $biayaPpjb + $biayaShm + $biayaLain;
+            $netPrice   = $basePrice - $discountNominal;
+            $ppjbFee    = $validated['ppjb_fee'] ?? 0;
+            $shmFee     = $validated['shm_fee'] ?? 0;
+            $otherFees  = $validated['other_fees'] ?? 0;
+            $bookingFee = $validated['booking_fee'] ?? 0;
+            $isIncluded = $validated['is_unit_included'] ?? false;
 
-            $validated['harga_dasar']  = $hargaDasar;
-            $validated['harga_netto']  = $hargaNetto;
-            $validated['grand_total']  = $grandTotal;
-            $validated['promo_diskon'] = $promoDiskonNominal;
-            $validated['biaya_ppjb']   = $biayaPpjb;
-            $validated['biaya_shm']    = $biayaShm;
-            $validated['biaya_lain']   = $biayaLain;
+            $grandTotal = $netPrice + $ppjbFee + $shmFee + $otherFees + ($isIncluded ? 0 : $bookingFee);
+
+            $validated['base_price']       = $basePrice;
+            $validated['net_price']        = $netPrice;
+            $validated['grand_total']      = $grandTotal;
+            $validated['discount_amount']  = $discountNominal;
+            $validated['ppjb_fee']         = $ppjbFee;
+            $validated['shm_fee']          = $shmFee;
+            $validated['other_fees']       = $otherFees;
 
             $transaction = $this->salesService->createTransaction($validated);
 
@@ -179,7 +171,7 @@ class SalesTransactionController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('SalesTransaction store error: ' . $e->getMessage());
+            Log::error('Transaction store error: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Gagal membuat transaksi',
                 'error'   => $e->getMessage()
@@ -187,39 +179,42 @@ class SalesTransactionController extends Controller
         }
     }
 
-    // UPDATE — hanya transaksi milik owner yang login
+    // UPDATE
     public function update(Request $request, $id)
     {
         $transaction = $this->ownerQuery()->findOrFail($id);
 
         $validated = $request->validate([
-            'kavling_id'          => 'sometimes|exists:kavling,id',
+            'plot_id'             => 'sometimes|exists:plots,id',
             'buyer_id'            => 'sometimes|exists:buyers,id',
-            'sales_id'            => 'sometimes|exists:users,id',
-            'metode_pembayaran'   => 'sometimes|in:cash_keras,angsuran_in_house,kpr_bank',
-            'tanggal_booking'     => 'sometimes|date',
+            'sales_staff_id'      => 'sometimes|exists:users,id',
+            'payment_method'      => 'sometimes|in:full_cash,installment,bank_mortgage',
+            'booking_date'        => 'sometimes|date',
 
-            'tipe_diskon'         => 'nullable|in:nominal,persen',
-            'promo_diskon'        => 'nullable|numeric|min:0',
-            'biaya_ppjb'          => 'nullable|numeric|min:0',
-            'biaya_shm'           => 'nullable|numeric|min:0',
-            'biaya_lain'          => 'nullable|numeric|min:0',
+            'discount_type'       => 'nullable|in:nominal,percent',
+            'discount_amount'     => 'nullable|numeric|min:0',
+            'ppjb_fee'            => 'nullable|numeric|min:0',
+            'shm_fee'             => 'nullable|numeric|min:0',
+            'other_fees'          => 'nullable|numeric|min:0',
 
-            'uang_muka_nominal'   => 'nullable|numeric|min:0',
-            'tenor'               => 'nullable|integer|min:1',
-            'tanggal_jatuh_tempo' => 'nullable|integer|min:1|max:31',
-            'status_penjualan'    => 'sometimes|in:active,paid_off,cancel,refund',
+            'down_payment_amount' => 'nullable|numeric|min:0',
+            'tenor_months'        => 'nullable|integer|min:1',
+            'due_day'             => 'nullable|integer|min:1|max:31',
+            'status'              => 'sometimes|in:active,paid_off,cancelled,refunded',
+            'notes'               => 'nullable|string',
+            'booking_fee'         => 'nullable|numeric|min:0',
+            'is_unit_included'    => 'nullable|boolean',
         ]);
 
         try {
             $updatedTransaction = $this->salesService->updateTransaction($transaction, $validated);
 
             return response()->json([
-                'message' => 'Data Penjualan berhasil diupdate',
+                'message' => 'Data Transaksi berhasil diupdate',
                 'data'    => $updatedTransaction
             ]);
         } catch (\Exception $e) {
-            Log::error('SalesTransaction update error: ' . $e->getMessage());
+            Log::error('Transaction update error: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Gagal mengupdate transaksi',
                 'error'   => $e->getMessage()
@@ -228,50 +223,47 @@ class SalesTransactionController extends Controller
     }
 
     // PAY DP
-    public function payDp($id)
+    public function payDp(Request $request, $id)
     {
         $transaction = $this->ownerQuery()->findOrFail($id);
 
-        if ($transaction->status_dp === 'paid') {
-            return response()->json([
-                'message' => 'Uang muka (DP) sudah berstatus lunas'
-            ], 400);
+        if ($transaction->dp_status === 'paid') {
+            return response()->json(['message' => 'Uang muka (DP) sudah berstatus lunas'], 400);
         }
 
         DB::beginTransaction();
 
         try {
-            $transaction->status_dp = 'paid';
+            $transaction->dp_status = 'paid';
+            $nominalDp = (float) $transaction->down_payment_amount;
 
-            $nominalDp = (float) $transaction->uang_muka_nominal;
             if ($nominalDp > 0) {
                 $transaction->total_paid = ($transaction->total_paid ?? 0) + $nominalDp;
             }
 
             $transaction->save();
 
-            // Record Payment History
             $payment = \App\Models\PaymentHistory::create([
-                'sales_transaction_id' => $transaction->id,
-                'tanggal'              => now()->toDateString(),
-                'keterangan'           => 'Pay Down Payment',
-                'amount'               => $nominalDp
+                'transaction_id'     => $transaction->id,
+                'date'               => $request->input('date', now()->toDateString()),
+                'notes'              => 'Pay Down Payment',
+                'amount'             => $nominalDp,
+                'referenceable_type' => Transaction::class,
+                'referenceable_id'   => $transaction->id,
             ]);
 
-            // Auto Journal ke Buku Kas
             \App\Models\CashFlow::create([
-                'tanggal'         => now()->toDateString(),
-                'tipe_transaksi'  => 'pemasukan',
-                'kategori'        => 'DP Penjualan',
-                'nominal'         => $nominalDp,
-                'keterangan'      => 'Pembayaran Uang Muka (DP) Transaksi: ' . $transaction->nomor_transaksi,
-                'referensi_type'  => \App\Models\PaymentHistory::class,
-                'referensi_id'    => $payment->id,
+                'date'               => $request->input('date', now()->toDateString()),
+                'type'               => 'income',
+                'category'           => 'DP Penjualan',
+                'amount'             => $nominalDp,
+                'notes'              => 'Pembayaran Uang Muka (DP) Transaksi: ' . $transaction->transaction_number,
+                'referenceable_type' => \App\Models\PaymentHistory::class,
+                'referenceable_id'   => $payment->id,
             ]);
 
-            // Check if transaction is paid off
             if ($transaction->total_paid >= $transaction->total_amount) {
-                $transaction->update(['status_penjualan' => 'paid_off']);
+                $transaction->update(['status' => 'paid_off']);
             }
 
             DB::commit();
@@ -292,43 +284,41 @@ class SalesTransactionController extends Controller
     }
 
     // PAY OFF
-    public function payOff($id)
+    public function payOff(Request $request, $id)
     {
         $transaction = $this->ownerQuery()->findOrFail($id);
 
-        if ($transaction->status_penjualan === 'paid_off' || $transaction->total_paid >= $transaction->total_amount) {
-            return response()->json([
-                'message' => 'Transaksi ini sudah lunas'
-            ], 400);
+        if ($transaction->status === 'paid_off' || $transaction->total_paid >= $transaction->total_amount) {
+            return response()->json(['message' => 'Transaksi ini sudah lunas'], 400);
         }
 
         DB::beginTransaction();
 
         try {
-            $sisaKekurangan = $transaction->total_amount - ($transaction->total_paid ?? 0);
+            $remaining = $transaction->total_amount - ($transaction->total_paid ?? 0);
 
-            $transaction->total_paid         = $transaction->total_amount;
-            $transaction->status_penjualan   = 'paid_off';
-            $transaction->tanggal_pelunasan  = now()->toDateString();
+            $transaction->total_paid      = $transaction->total_amount;
+            $transaction->status          = 'paid_off';
+            $transaction->settlement_date = $request->input('date', now()->toDateString());
             $transaction->save();
 
-            // Record Payment History
             $payment = \App\Models\PaymentHistory::create([
-                'sales_transaction_id' => $transaction->id,
-                'tanggal'              => now()->toDateString(),
-                'keterangan'           => 'Payment Off',
-                'amount'               => $sisaKekurangan
+                'transaction_id'     => $transaction->id,
+                'date'               => $request->input('date', now()->toDateString()),
+                'notes'              => 'Payment Off',
+                'amount'             => $remaining,
+                'referenceable_type' => Transaction::class,
+                'referenceable_id'   => $transaction->id,
             ]);
 
-            // Auto Journal ke Buku Kas
             \App\Models\CashFlow::create([
-                'tanggal'        => now()->toDateString(),
-                'tipe_transaksi' => 'pemasukan',
-                'kategori'       => 'Pelunasan Penjualan',
-                'nominal'        => $sisaKekurangan,
-                'keterangan'     => 'Pelunasan Transaksi: ' . $transaction->nomor_transaksi,
-                'referensi_type' => \App\Models\PaymentHistory::class,
-                'referensi_id'   => $payment->id,
+                'date'               => $request->input('date', now()->toDateString()),
+                'type'               => 'income',
+                'category'           => 'Pelunasan Penjualan',
+                'amount'             => $remaining,
+                'notes'              => 'Pelunasan Transaksi: ' . $transaction->transaction_number,
+                'referenceable_type' => \App\Models\PaymentHistory::class,
+                'referenceable_id'   => $payment->id,
             ]);
 
             DB::commit();
@@ -352,46 +342,43 @@ class SalesTransactionController extends Controller
     public function destroy($id)
     {
         $transaction = $this->ownerQuery()->findOrFail($id);
-
         $this->salesService->handleHapusPenjualan($transaction);
 
-        return response()->json([
-            'message' => 'Penjualan dan semua datanya berhasil dihapus permanen'
-        ]);
+        return response()->json(['message' => 'Penjualan dan semua datanya berhasil dihapus permanen']);
     }
 
-    // CANCEL SALE (Refund, Oper Kredit, Hapus)
+    // CANCEL SALE
     public function cancelSale(Request $request, $id)
     {
         $transaction = $this->ownerQuery()->findOrFail($id);
 
         $validated = $request->validate([
-            'tipe_pembatalan' => 'required|in:refund,oper_kredit,hapus',
-            'nominal_refund'  => 'required_if:tipe_pembatalan,refund|numeric|min:0',
-            'new_buyer_id'    => 'required_if:tipe_pembatalan,oper_kredit|exists:buyers,id',
-            'new_sales_id'    => 'nullable|exists:users,id',
+            'cancel_type'    => 'required|in:refund,transfer_credit,delete',
+            'refund_amount'  => 'required_if:cancel_type,refund|numeric|min:0',
+            'new_buyer_id'   => 'required_if:cancel_type,transfer_credit|exists:buyers,id',
+            'new_sales_staff_id' => 'nullable|exists:users,id',
         ]);
 
         try {
-            if ($validated['tipe_pembatalan'] === 'refund') {
-                $this->salesService->handleCancelRefund($transaction, $validated['nominal_refund']);
+            if ($validated['cancel_type'] === 'refund') {
+                $this->salesService->handleCancelRefund($transaction, $validated['refund_amount']);
                 $message = 'Pembatalan transaksi via Refund berhasil.';
-            } elseif ($validated['tipe_pembatalan'] === 'oper_kredit') {
+            } elseif ($validated['cancel_type'] === 'transfer_credit') {
                 $this->salesService->handleOperKredit(
                     $transaction,
                     $validated['new_buyer_id'],
-                    $validated['new_sales_id'] ?? null
+                    $validated['new_sales_staff_id'] ?? null
                 );
-                $message = 'Oper Kredit berhasil, pembeli baru sudah ditetapkan.';
-            } elseif ($validated['tipe_pembatalan'] === 'hapus') {
+                $message = 'Transfer Kredit berhasil, pembeli baru sudah ditetapkan.';
+            } elseif ($validated['cancel_type'] === 'delete') {
                 $this->salesService->handleHapusPenjualan($transaction);
                 $message = 'Transaksi penjualan berhasil dihapus permanen.';
             }
 
             return response()->json([
                 'message' => $message,
-                'data'    => $validated['tipe_pembatalan'] !== 'hapus'
-                    ? $transaction->fresh()->load('buyer', 'sales', 'kavling')
+                'data'    => $validated['cancel_type'] !== 'delete'
+                    ? $transaction->fresh()->load('buyer', 'salesStaff', 'plot')
                     : null
             ]);
         } catch (\Exception $e) {

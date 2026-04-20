@@ -2,26 +2,23 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Exports\KavlingExport;
-use App\Models\Kavling;
+use App\Http\Controllers\Controller;
+use App\Models\Plot;
 use App\Models\Project;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
+use App\Exports\KavlingExport;
 
 class KavlingController extends Controller
 {
-    /**
-     * Helper: ambil project IDs yang dimiliki owner yang login.
-     */
     private function ownerProjectIds(): \Illuminate\Support\Collection
     {
         return Project::where('owner_id', auth()->id())->pluck('id');
     }
 
-    // GET all — hanya kavling dari project milik owner
+    // GET all — hanya plot dari project milik owner
     public function index()
     {
-        $data = Kavling::with('project')
+        $data = Plot::with('project')
             ->whereIn('project_id', $this->ownerProjectIds())
             ->latest()
             ->get();
@@ -32,30 +29,29 @@ class KavlingController extends Controller
     // GET by id
     public function show($id)
     {
-        $data = Kavling::with('project')
+        $data = Plot::with('project')
             ->whereIn('project_id', $this->ownerProjectIds())
             ->findOrFail($id);
 
         return response()->json($data);
     }
 
-    // CREATE — validasi project_id milik owner
+    // CREATE
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'project_id'  => 'required|exists:project,id',
-            'blok_nomor'  => 'required|string',
-            'luas'        => 'required|numeric',
-            'harga_dasar' => 'required|numeric',
-            'status'      => 'required|in:available,sold,reserved,active',
+            'project_id'  => 'required|exists:projects,id',
+            'plot_number' => 'required|string',
+            'area'        => 'required|numeric',
+            'base_price'  => 'required|numeric',
+            'status'      => 'required|in:available,sold,reserved',
         ]);
 
-        // Pastikan project_id benar-benar milik owner yang login
         Project::where('id', $validated['project_id'])
             ->where('owner_id', auth()->id())
             ->firstOrFail();
 
-        $data = Kavling::create($validated);
+        $data = Plot::create($validated);
 
         return response()->json([
             'message' => 'Kavling berhasil dibuat',
@@ -66,69 +62,44 @@ class KavlingController extends Controller
     // UPDATE
     public function update(Request $request, $id)
     {
-        $kavling = Kavling::whereIn('project_id', $this->ownerProjectIds())
-            ->findOrFail($id);
+        $plot = Plot::whereIn('project_id', $this->ownerProjectIds())->findOrFail($id);
 
         $validated = $request->validate([
-            'project_id'  => 'sometimes|exists:project,id',
-            'blok_nomor'  => 'sometimes|string',
-            'luas'        => 'sometimes|numeric',
-            'harga_dasar' => 'sometimes|numeric',
-            'status'      => 'sometimes|in:available,sold,reserved,active',
+            'project_id'  => 'sometimes|exists:projects,id',
+            'plot_number' => 'sometimes|string',
+            'area'        => 'sometimes|numeric',
+            'base_price'  => 'sometimes|numeric',
+            'status'      => 'sometimes|in:available,sold,reserved',
         ]);
 
-        // Jika project_id diubah, pastikan project tujuan juga milik owner
         if (isset($validated['project_id'])) {
             Project::where('id', $validated['project_id'])
                 ->where('owner_id', auth()->id())
                 ->firstOrFail();
         }
 
-        $kavling->update($validated);
+        $plot->update($validated);
 
         return response()->json([
             'message' => 'Kavling berhasil diupdate',
-            'data'    => $kavling
+            'data'    => $plot
         ]);
     }
 
     // DELETE
     public function destroy($id)
     {
-        $kavling = Kavling::whereIn('project_id', $this->ownerProjectIds())
-            ->findOrFail($id);
+        $plot = Plot::whereIn('project_id', $this->ownerProjectIds())->findOrFail($id);
+        $plot->delete();
 
-        $kavling->delete();
-
-        return response()->json([
-            'message' => 'Kavling berhasil dihapus'
-        ]);
+        return response()->json(['message' => 'Kavling berhasil dihapus']);
     }
 
-    // BONUS: update status cepat
-    public function updateStatus(Request $request, $id)
-    {
-        $kavling = Kavling::whereIn('project_id', $this->ownerProjectIds())
-            ->findOrFail($id);
-
-        $request->validate([
-            'status' => 'required|in:available,sold,reserved,active'
-        ]);
-
-        $kavling->updateStatus($request->status);
-
-        return response()->json([
-            'message' => 'Status kavling berhasil diupdate',
-            'data'    => $kavling
-        ]);
-    }
-
-    // EXPORT EXCEL — download semua kavling milik owner (opsional filter by project_id)
+    // EXPORT EXCEL
     public function exportExcel(Request $request)
     {
-        $projectId = $request->query('project_id'); // opsional
+        $projectId = $request->query('project_id');
 
-        // Validasi project_id jika disertakan
         if ($projectId) {
             Project::where('id', $projectId)
                 ->where('owner_id', auth()->id())

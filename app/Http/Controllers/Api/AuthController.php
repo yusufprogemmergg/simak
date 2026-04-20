@@ -48,17 +48,24 @@ class AuthController extends Controller
                 'start_date' => now(),
             ]);
 
-            Auth::login($user);
-            $token = $user->createToken('auth_token')->plainTextToken;
+            if ($request->hasSession()) {
+                Auth::login($user);
+            }
+            
+            $responseData = [
+                'user'        => $user,
+                'license_key' => $license->license_key,
+            ];
+            
+            // Hanya kirim token untuk Client Stateless (Mobile/Postman), Sembunyikan untuk SPA demi keamanan (XSS)
+            if (!$request->hasSession()) {
+                $responseData['token'] = $user->createToken('auth_token')->plainTextToken;
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Register berhasil',
-                'data'    => [
-                    'user'        => $user,
-                    'license_key' => $license->license_key,
-                    'token'       => $token,
-                ]
+                'data'    => $responseData
             ], 201);
 
         } catch (\Exception $e) {
@@ -100,20 +107,23 @@ class AuthController extends Controller
                 'last_login_ip' => request()->ip(),
             ]);
 
-            Auth::login($user);
-            
-            // Re-generate session untuk keamanan mencegah session fixation
-            $request->session()->regenerate();
+            if ($request->hasSession()) {
+                Auth::login($user);
+                // Re-generate session untuk keamanan mencegah session fixation
+                $request->session()->regenerate();
+            }
 
-            $token = $user->createToken('auth_token')->plainTextToken;
+            $responseData = ['user' => $user];
+            
+            // Hanya kirim token untuk Client Stateless (Mobile/Postman), Sembunyikan untuk SPA demi keamanan (XSS)
+            if (!$request->hasSession()) {
+                $responseData['token'] = $user->createToken('auth_token')->plainTextToken;
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Login berhasil',
-                'data'    => [
-                    'user'  => $user,
-                    'token' => $token,
-                ]
+                'data'    => $responseData
             ]);
 
         } catch (\Exception $e) {
@@ -131,10 +141,13 @@ class AuthController extends Controller
      */
     public function logout(\Illuminate\Http\Request $request): JsonResponse
     {
-        Auth::guard('web')->logout();
-        
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        } else if ($request->user() && method_exists($request->user(), 'currentAccessToken') && $request->user()->currentAccessToken()) {
+            $request->user()->currentAccessToken()->delete();
+        }
         
         return response()->json(['message' => 'Logout success']);
     }

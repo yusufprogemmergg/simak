@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\ProfilePerusahaan;
+use App\Models\CompanyProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -14,7 +14,7 @@ class ProfilePerusahaanController extends Controller
      */
     public function index()
     {
-        $data = auth()->user()->profilePerusahaan;
+        $data = auth()->user()->companyProfile;
 
         return response()->json([
             'success' => true,
@@ -23,34 +23,33 @@ class ProfilePerusahaanController extends Controller
     }
 
     /**
-     * CREATE / UPDATE profile perusahaan
+     * CREATE / UPDATE company profile
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'                => 'required|string',
-            'npwp'                => ['nullable', 'regex:/^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$/'],
-            'email'               => 'nullable|email',
-            'telepon'             => 'nullable|string',
-            'alamat'              => 'nullable|string',
-            'logo'                => 'nullable|image|max:2048',
-            'nama_ttd_admin'      => 'nullable|string',
-            'catatan_kaki_cetakan'=> 'nullable|string',
-            'format_faktur'       => ['required', 'string', 'regex:/\d{4}$/'],
-            'format_kuitansi'     => ['required', 'string', 'regex:/\d{4}$/'],
+            'name'                 => 'required|string',
+            'npwp'                 => ['nullable', 'regex:/^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$/'],
+            'email'                => 'nullable|email',
+            'phone'                => 'nullable|string',
+            'address'              => 'nullable|string',
+            'logo_path'            => 'nullable|image|max:2048',
+            'admin_signature_name' => 'nullable|string',
+            'print_footer'         => 'nullable|string',
+            'invoice_format'       => ['required', 'string'],
+            'receipt_format'       => ['required', 'string'],
         ]);
 
         $user = auth()->user();
 
-        // Upload logo: hapus lama jika ada, simpan yang baru
-        if ($request->hasFile('logo')) {
-            if ($user->profilePerusahaan && $user->profilePerusahaan->logo) {
-                Storage::disk('public')->delete($user->profilePerusahaan->logo);
+        if ($request->hasFile('logo_path')) {
+            if ($user->companyProfile && $user->companyProfile->logo_path) {
+                Storage::disk('public')->delete($user->companyProfile->logo_path);
             }
-            $validated['logo'] = $request->file('logo')->store('logo', 'public');
+            $validated['logo_path'] = $request->file('logo_path')->store('logo', 'public');
         }
 
-        $data = ProfilePerusahaan::updateOrCreate(
+        $data = CompanyProfile::updateOrCreate(
             ['owner_id' => $user->id],
             $validated
         );
@@ -68,28 +67,28 @@ class ProfilePerusahaanController extends Controller
     public function update(Request $request, $id)
     {
         $user    = auth()->user();
-        $profile = ProfilePerusahaan::where('id', $id)
+        $profile = CompanyProfile::where('id', $id)
             ->where('owner_id', $user->id)
             ->firstOrFail();
 
         $validated = $request->validate([
-            'name'                => 'sometimes|string',
-            'npwp'                => ['nullable', 'regex:/^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$/'],
-            'email'               => 'nullable|email',
-            'telepon'             => 'nullable|string',
-            'alamat'              => 'nullable|string',
-            'logo'                => 'nullable|image|max:2048',
-            'nama_ttd_admin'      => 'nullable|string',
-            'catatan_kaki_cetakan'=> 'nullable|string',
-            'format_faktur'       => ['sometimes', 'string', 'regex:/\d{4}$/'],
-            'format_kuitansi'     => ['sometimes', 'string', 'regex:/\d{4}$/'],
+            'name'                 => 'sometimes|string',
+            'npwp'                 => ['nullable', 'regex:/^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$/'],
+            'email'                => 'nullable|email',
+            'phone'                => 'nullable|string',
+            'address'              => 'nullable|string',
+            'logo_path'            => 'nullable|image|max:2048',
+            'admin_signature_name' => 'nullable|string',
+            'print_footer'         => 'nullable|string',
+            'invoice_format'       => ['sometimes', 'string'],
+            'receipt_format'       => ['sometimes', 'string'],
         ]);
 
-        if ($request->hasFile('logo')) {
-            if ($profile->logo) {
-                Storage::disk('public')->delete($profile->logo);
+        if ($request->hasFile('logo_path')) {
+            if ($profile->logo_path) {
+                Storage::disk('public')->delete($profile->logo_path);
             }
-            $validated['logo'] = $request->file('logo')->store('logo', 'public');
+            $validated['logo_path'] = $request->file('logo_path')->store('logo', 'public');
         }
 
         $profile->update($validated);
@@ -102,17 +101,17 @@ class ProfilePerusahaanController extends Controller
     }
 
     /**
-     * DELETE profile perusahaan (via DELETE /{id})
+     * DELETE profile perusahaan
      */
     public function destroy($id)
     {
         $user    = auth()->user();
-        $profile = ProfilePerusahaan::where('id', $id)
+        $profile = CompanyProfile::where('id', $id)
             ->where('owner_id', $user->id)
             ->firstOrFail();
 
-        if ($profile->logo) {
-            Storage::disk('public')->delete($profile->logo);
+        if ($profile->logo_path) {
+            Storage::disk('public')->delete($profile->logo_path);
         }
 
         $profile->delete();
@@ -124,16 +123,16 @@ class ProfilePerusahaanController extends Controller
     }
 
     /**
-     * DELETE LOGO SAJA — hanya milik owner yang login
+     * DELETE LOGO SAJA
      */
     public function deleteLogo()
     {
         $user    = auth()->user();
-        $profile = $user->profilePerusahaan;
+        $profile = $user->companyProfile;
 
-        if ($profile && $profile->logo) {
-            Storage::disk('public')->delete($profile->logo);
-            $profile->update(['logo' => null]);
+        if ($profile && $profile->logo_path) {
+            Storage::disk('public')->delete($profile->logo_path);
+            $profile->update(['logo_path' => null]);
         }
 
         return response()->json([
@@ -142,9 +141,6 @@ class ProfilePerusahaanController extends Controller
         ]);
     }
 
-    /**
-     * Generate nomor berdasarkan format (helper internal)
-     */
     public function generateNomor($format, $nomorUrut)
     {
         return str_replace(

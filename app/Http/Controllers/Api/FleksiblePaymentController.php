@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\SalesTransaction;
+use App\Models\Transaction;
 use App\Services\FleksiblePaymentService;
 use Exception;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class FleksiblePaymentController extends Controller
@@ -24,24 +24,24 @@ class FleksiblePaymentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'sales_transaction_id' => 'required|exists:sales_transactions,id',
-            'nominal'              => 'required|numeric|min:1',
-            'tanggal_bayar'        => 'required|date',
-            'catatan'              => 'nullable|string',
+            'transaction_id' => 'required|exists:transactions,id',
+            'amount'         => 'required|numeric|min:1',
+            'paid_date'      => 'required|date',
+            'notes'          => 'nullable|string',
         ]);
 
         // Pastikan transaksi milik owner yang sedang login
-        $transaction = SalesTransaction::where('id', $validated['sales_transaction_id'])
+        $transaction = Transaction::where('id', $validated['transaction_id'])
             ->where('owner_id', auth()->id())
             ->firstOrFail();
 
         try {
-            $pembayaran = $this->paymentService->processPayment($validated);
+            $payment = $this->paymentService->processPayment($validated);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Pembayaran fleksibel berhasil diproses dan dialokasikan otomatis.',
-                'data'    => $pembayaran
+                'data'    => $payment
             ], 201);
 
         } catch (Exception $e) {

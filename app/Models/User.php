@@ -17,7 +17,7 @@ class User extends Authenticatable
         'username',
         'email',
         'password',
-        'no_telepon',
+        'phone',
         'role',
     ];
 
@@ -31,7 +31,6 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'created_at'        => 'datetime',
         'updated_at'        => 'datetime',
-        // last_login_ip adalah string IP address, tidak perlu di-cast
     ];
 
     /**
@@ -42,25 +41,28 @@ class User extends Authenticatable
         return $this->hasOne(UserLicense::class);
     }
 
-    public function profilePerusahaan()
+    /**
+     * Relasi dengan company profile
+     */
+    public function companyProfile()
     {
-        return $this->hasOne(ProfilePerusahaan::class, 'owner_id');
+        return $this->hasOne(CompanyProfile::class, 'owner_id');
     }
 
     /**
-     * Relasi dengan penjualan (sebagai sales)
+     * Relasi dengan transaksi (sebagai sales staff)
      */
-    public function sales_transactions()
+    public function transactions()
     {
-        return $this->hasMany(SalesTransaction::class, 'sales_id');
+        return $this->hasMany(Transaction::class, 'sales_staff_id');
     }
 
     /**
-     * Relasi dengan pembayaran fleksibel yang dibuat
+     * Relasi dengan flexible payment yang dibuat
      */
-    public function pembayaranFleksibel()
+    public function flexiblePayments()
     {
-        return $this->hasMany(FleksiblePayment::class, 'created_by');
+        return $this->hasMany(FlexiblePayment::class, 'created_by');
     }
 
     /**
@@ -69,19 +71,6 @@ class User extends Authenticatable
     public function hasActiveLicense()
     {
         return $this->license && $this->license->isActive();
-    }
-
-    /**
-     * Cek apakah user bisa membuat project baru
-     */
-    public function canCreateProject()
-    {
-        if (!$this->hasActiveLicense()) {
-            return false;
-        }
-
-        $projectCount = Project::where('created_by', $this->id)->count();
-        return $projectCount < $this->license->max_projects;
     }
 
     /**
@@ -100,13 +89,19 @@ class User extends Authenticatable
         return $this->role === 'salesman';
     }
 
-    public function sales()
+    /**
+     * Relasi dengan sales staff record
+     */
+    public function salesStaff()
     {
-        return $this->hasOne(Sales::class);
+        return $this->hasOne(SalesStaff::class);
     }
 
+    /**
+     * Relasi dengan semua sales staff dalam tim (untuk owner)
+     */
     public function salesTeam()
     {
-        return $this->hasMany(Sales::class, 'owner_id');
+        return $this->hasMany(SalesStaff::class, 'owner_id');
     }
 }

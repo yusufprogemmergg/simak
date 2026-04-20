@@ -52,15 +52,15 @@ class Angsuran extends Model
      */
     public function isLunas()
     {
-        return $this->status === 'lunas';
+        return $this->status === 'paid';
     }
 
     /**
-     * Cek apakah angsuran terlambat
+     * Cek apakah angsuran sedang dicicil sebagian
      */
-    public function isTerlambat()
+    public function isPartial()
     {
-        return $this->status === 'terlambat';
+        return $this->status === 'partial';
     }
 
     /**

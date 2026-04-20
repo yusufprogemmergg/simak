@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../lib/axios';
-import AdminLayout from '../../layouts/AdminLayout';
+import { useOutletContext } from 'react-router-dom';
 import { FiKey, FiTrash2, FiX } from 'react-icons/fi';
 export default function LicenseManagement() {
-    const [user, setUser] = useState(null);
+    const { user } = useOutletContext();
     const [licenses, setLicenses] = useState([]);
     const [loading, setLoading] = useState(true);
     
@@ -19,22 +19,13 @@ export default function LicenseManagement() {
     const [success, setSuccess] = useState(null);
 
     useEffect(() => {
-        const fetchInitialData = async () => {
-            try {
-                const userRes = await axios.get('/api/me');
-                setUser(userRes.data);
-                if (userRes.data.role === 'super_admin') {
-                    fetchLicenses();
-                } else {
-                    setLoading(false);
-                    setError("Anda tidak memiliki akses ke halaman ini.");
-                }
-            } catch (err) {
-                console.error(err);
-            }
-        };
-        fetchInitialData();
-    }, []);
+        if (user?.role === 'super_admin') {
+            fetchLicenses();
+        } else {
+            setLoading(false);
+            setError("Anda tidak memiliki akses ke halaman ini.");
+        }
+    }, [user]);
 
     const fetchLicenses = async () => {
         setLoading(true);
@@ -83,21 +74,17 @@ export default function LicenseManagement() {
     };
 
     if (loading && !licenses.length) return (
-        <AdminLayout user={user}>
-            <div className="flex justify-center p-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#901C31]"></div>
-            </div>
-        </AdminLayout>
+        <div className="flex justify-center p-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#901C31]"></div>
+        </div>
     );
 
     if (error && !licenses.length) return (
-        <AdminLayout user={user}>
-            <div className="bg-red-50 p-6 rounded-lg text-red-700">{error}</div>
-        </AdminLayout>
+        <div className="bg-red-50 p-6 rounded-lg text-red-700">{error}</div>
     );
 
     return (
-        <AdminLayout user={user}>
+        <>
             <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h3 className="text-2xl font-bold text-gray-800">License Management</h3>
@@ -223,6 +210,6 @@ export default function LicenseManagement() {
                     </div>
                 </div>
             )}
-        </AdminLayout>
+        </>
     );
 }

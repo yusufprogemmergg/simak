@@ -8,6 +8,7 @@ class Sales extends Model
     protected $fillable = [
         'user_id',
         'owner_id',
+        'name',
         'phone',
         'unit_sales',
         'total_revenue',

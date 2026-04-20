@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\FleksiblePaymentController;
 use App\Http\Controllers\Api\AngsuranController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\AdminLicenseController;
+use App\Http\Controllers\Api\PaymentController;
 
 // ─────────────────────────────────────────────────────
 // AUTH (public)
@@ -102,6 +103,7 @@ Route::prefix('master')->middleware(['auth:sanctum', 'license'])->group(function
     // Angsuran Direct Pay
     Route::post('/angsuran/{id}/pay', [AngsuranController::class, 'payLunas']);
 
-    // Print Kuitansi
+    // Print & Manage Payment History
     Route::get('/payment-history/{id}/print-kuitansi', [\App\Http\Controllers\Api\PaymentHistoryController::class, 'printKuitansi']);
+    Route::delete('/payment-history/{id}',           [PaymentController::class, 'destroy']);
 });

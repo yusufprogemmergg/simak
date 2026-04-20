@@ -12,24 +12,45 @@ class CashFlow extends Model
     protected $table = 'cash_flows';
 
     protected $fillable = [
-        'tanggal',
-        'tipe_transaksi',
-        'kategori',
-        'nominal',
-        'keterangan',
-        'referensi_type',
-        'referensi_id',
+        'owner_id',
+        'date',
+        'type',
+        'category',
+        'amount',
+        'notes',
+        'referenceable_type',
+        'referenceable_id',
     ];
 
     protected $casts = [
-        'tanggal' => 'date',
-        'nominal' => 'decimal:2',
+        'date'   => 'date',
+        'amount' => 'decimal:2',
     ];
 
     /**
-     * Get the parent referensi model (e.g. SalesTransaction or PaymentHistory).
+     * Auto set owner_id saat create
      */
-    public function referensi()
+    protected static function booted()
+    {
+        static::creating(function ($cashFlow) {
+            if (!$cashFlow->owner_id && auth()->check()) {
+                $cashFlow->owner_id = auth()->id();
+            }
+        });
+    }
+
+    /**
+     * Relasi ke owner (user)
+     */
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    /**
+     * Get the parent referenceable model (e.g. Transaction or PaymentHistory).
+     */
+    public function referenceable()
     {
         return $this->morphTo();
     }

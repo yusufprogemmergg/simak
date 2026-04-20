@@ -4,18 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Models\Sales;
+use App\Models\SalesStaff;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
 class SalesController extends Controller
 {
-    /**
-     * GET ALL SALES (punya owner)
-     */
     public function index()
     {
-        $data = Sales::with('user')
+        $data = SalesStaff::with('user')
             ->where('owner_id', auth()->id())
             ->latest()
             ->get();
@@ -23,104 +20,84 @@ class SalesController extends Controller
         return response()->json($data);
     }
 
-    /**
-     * GET DETAIL
-     */
     public function show($id)
     {
-        $data = Sales::with('user')
+        $data = SalesStaff::with('user')
             ->where('owner_id', auth()->id())
             ->findOrFail($id);
 
         return response()->json($data);
     }
 
-    /**
-     * CREATE SALES + USER
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string',
-            'email' => 'required|email|unique:users,email',
+            'name'     => 'required|string',
+            'email'    => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'phone' => 'nullable|string',
+            'phone'    => 'nullable|string',
         ]);
 
         $owner = auth()->user();
 
-        // 🔥 1. buat user (login)
         $user = User::create([
             'username' => $validated['name'],
-            'email' => $validated['email'],
+            'email'    => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'role' => 'salesman'
+            'role'     => 'salesman'
         ]);
 
-        // 🔥 2. buat sales
-        $sales = Sales::create([
-            'user_id' => $user->id,
-            'owner_id' => $owner->id,
-            'phone' => $validated['phone'] ?? null,
-            'unit_sales' => 0,
-            'total_revenue' => 0,
+        $salesStaff = SalesStaff::create([
+            'user_id'         => $user->id,
+            'owner_id'        => $owner->id,
+            'name'            => $validated['name'],
+            'phone'           => $validated['phone'] ?? null,
+            'total_units_sold' => 0,
+            'total_revenue'   => 0,
         ]);
 
         return response()->json([
             'message' => 'Sales berhasil dibuat',
-            'data' => $sales->load('user')
+            'data'    => $salesStaff->load('user')
         ]);
     }
 
-    /**
-     * UPDATE SALES + USER
-     */
     public function update(Request $request, $id)
     {
-        $sales = Sales::where('owner_id', auth()->id())
+        $salesStaff = SalesStaff::where('owner_id', auth()->id())
             ->with('user')
             ->findOrFail($id);
 
         $validated = $request->validate([
-            'name' => 'nullable|string',
-            'email' => 'nullable|email|unique:users,email,' . $sales->user_id,
+            'name'     => 'nullable|string',
+            'email'    => 'nullable|email|unique:users,email,' . $salesStaff->user_id,
             'password' => 'nullable|min:6',
-            'phone' => 'nullable|string',
+            'phone'    => 'nullable|string',
         ]);
 
-        // 🔥 update user
-        $sales->user->update([
-            'name' => $validated['name'] ?? $sales->user->name,
-            'email' => $validated['email'] ?? $sales->user->email,
-            'password' => isset($validated['password']) 
-                ? Hash::make($validated['password']) 
-                : $sales->user->password,
+        $salesStaff->user->update([
+            'username' => $validated['name'] ?? $salesStaff->user->username,
+            'email'    => $validated['email'] ?? $salesStaff->user->email,
+            'password' => isset($validated['password'])
+                ? Hash::make($validated['password'])
+                : $salesStaff->user->password,
         ]);
 
-        // 🔥 update sales
-        $sales->update([
-            'phone' => $validated['phone'] ?? $sales->phone,
+        $salesStaff->update([
+            'phone' => $validated['phone'] ?? $salesStaff->phone,
         ]);
 
         return response()->json([
             'message' => 'Sales berhasil diupdate',
-            'data' => $sales->load('user')
+            'data'    => $salesStaff->load('user')
         ]);
     }
 
-    /**
-     * DELETE SALES (hapus user juga)
-     */
     public function destroy($id)
     {
-        $sales = Sales::where('owner_id', auth()->id())
-            ->findOrFail($id);
+        $salesStaff = SalesStaff::where('owner_id', auth()->id())->findOrFail($id);
+        $salesStaff->user->delete();
 
-        // hapus user (auto cascade ke sales kalau FK benar)
-        $sales->user->delete();
-
-        return response()->json([
-            'message' => 'Sales berhasil dihapus'
-        ]);
+        return response()->json(['message' => 'Sales berhasil dihapus']);
     }
 }

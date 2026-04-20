@@ -9,27 +9,27 @@ class Project extends Model
 {
     use HasFactory;
 
-    protected $table = 'project';
+    protected $table = 'projects';
 
     protected $fillable = [
         'owner_id',
-        'nama_project',
-        'lokasi',
-        'catatan',
-        'total_unit',
+        'name',
+        'location',
+        'notes',
+        'total_units',
     ];
 
     protected $casts = [
-        'total_unit' => 'integer',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
+        'total_units' => 'integer',
+        'created_at'  => 'datetime',
+        'updated_at'  => 'datetime',
     ];
 
     /**
-     * Relasi dengan kavling
+     * Relasi dengan plot (kavling)
      */
-    public function kavling()
+    public function plots()
     {
-        return $this->hasMany(Kavling::class);
+        return $this->hasMany(Plot::class);
     }
 }

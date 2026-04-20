@@ -2,74 +2,76 @@
 
 namespace App\Services;
 
-use App\Models\FleksiblePayment;
-use App\Models\SalesTransaction;
-use App\Models\AlokasiPembayaranFleksibel;
+use App\Models\FlexiblePayment;
+use App\Models\FlexiblePaymentAllocation;
+use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Exception;
 
 class FleksiblePaymentService
 {
     /**
-     * Proses terima/approve pembayaran fleksibel.
-     * Fungsi ini menyimpan langsung pembayaran dan melakukan alokasi FIFO ke angsuran.
+     * Proses pembayaran fleksibel — simpan dan alokasikan ke installments secara FIFO.
      */
     public function processPayment(array $data)
     {
         DB::beginTransaction();
 
         try {
-            $transaction = SalesTransaction::findOrFail($data['sales_transaction_id']);
+            $transaction = Transaction::findOrFail($data['transaction_id']);
 
-            // Validate nominal tidak melebihi sisa kekurangan pembayaran
-            $sisaKekurangan = $transaction->total_amount - $transaction->total_paid;
-            if ($data['nominal'] > $sisaKekurangan) {
-                throw new Exception("Nominal pembayaran tidak boleh lebih dari sisa kekurangan perhitungan (".number_format($sisaKekurangan).")");
+            // Validate nominal tidak melebihi sisa
+            $remaining = $transaction->total_amount - $transaction->total_paid;
+            if ($data['amount'] > $remaining) {
+                throw new Exception("Nominal pembayaran tidak boleh lebih dari sisa kekurangan (" . number_format($remaining) . ")");
             }
 
-            // Create record fleksible payment
-            $pembayaran = FleksiblePayment::create([
-                'sales_transaction_id' => $transaction->id,
-                'nominal' => $data['nominal'],
-                'tanggal_bayar' => $data['tanggal_bayar'],
-                'catatan' => $data['catatan'] ?? null,
-                'created_by' => auth()->id() ?? null,
+            // Buat record flexible payment
+            $payment = FlexiblePayment::create([
+                'transaction_id' => $transaction->id,
+                'amount'         => $data['amount'],
+                'paid_date'      => $data['paid_date'],
+                'notes'          => $data['notes'] ?? null,
+                'status'         => 'pending',
+                'created_by'     => auth()->id() ?? null,
             ]);
 
-            // Update ke parent transaction
-            $transaction->increment('total_paid', (float)$pembayaran->nominal);
-            $transaction->increment('total_flexible_paid', (float)$pembayaran->nominal);
+            // Update totals
+            $transaction->increment('total_paid', (float)$payment->amount);
+            $transaction->increment('total_flexible_paid', (float)$payment->amount);
 
-            // Record Payment History for Flexible Payment
+            // Record Payment History
             $paymentHistory = \App\Models\PaymentHistory::create([
-                'sales_transaction_id' => $transaction->id,
-                'tanggal' => $pembayaran->tanggal_bayar,
-                'keterangan' => 'Flexible Payment',
-                'amount' => $pembayaran->nominal
+                'transaction_id'     => $transaction->id,
+                'date'               => $payment->paid_date,
+                'notes'              => 'Flexible Payment',
+                'amount'             => $payment->amount,
+                'referenceable_type' => FlexiblePayment::class,
+                'referenceable_id'   => $payment->id,
             ]);
 
             // Auto Journal ke Buku Kas
             \App\Models\CashFlow::create([
-                'tanggal' => $pembayaran->tanggal_bayar,
-                'tipe_transaksi' => 'pemasukan',
-                'kategori' => 'Pembayaran Fleksibel',
-                'nominal' => $pembayaran->nominal,
-                'keterangan' => 'Pembayaran Fleksibel Transaksi: ' . $transaction->nomor_transaksi,
-                'referensi_type' => \App\Models\PaymentHistory::class,
-                'referensi_id' => $paymentHistory->id,
+                'date'               => $payment->paid_date,
+                'type'               => 'income',
+                'category'           => 'Pembayaran Fleksibel',
+                'amount'             => $payment->amount,
+                'notes'              => 'Pembayaran Fleksibel Transaksi: ' . $transaction->transaction_number,
+                'referenceable_type' => \App\Models\PaymentHistory::class,
+                'referenceable_id'   => $paymentHistory->id,
             ]);
 
-            // Jika angsuran in house, lakukan auto-alokasi waterfall
-            if ($transaction->metode_pembayaran === 'angsuran_in_house') {
-                $this->allocateToAngsuran($transaction, $pembayaran);
+            // Jika installment, lakukan auto-alokasi FIFO
+            if ($transaction->payment_method === 'installment') {
+                $this->allocateToInstallments($transaction, $payment);
             }
 
-            // Setelah alokasi (atau untuk metode lain), cek apakah lunas
+            // Cek apakah lunas
             $this->checkAndSetPaidOff($transaction);
 
             DB::commit();
 
-            return $pembayaran;
+            return $payment;
         } catch (Exception $e) {
             DB::rollBack();
             throw $e;
@@ -77,56 +79,46 @@ class FleksiblePaymentService
     }
 
     /**
-     * Alokasi sistem FIFO secara otomatis ke tabel angsuran
+     * Alokasi FIFO ke installments
      */
-    private function allocateToAngsuran(SalesTransaction $transaction, FleksiblePayment $pembayaran)
+    private function allocateToInstallments(Transaction $transaction, FlexiblePayment $payment)
     {
-        $sisaDanaMembayar = $pembayaran->nominal;
+        $remainingFund = $payment->amount;
 
-        // Ambil urutan angsuran terlama (berdasarkan bulan_ke) yang belum lunas
-        $daftarAngsuran = $transaction->angsuran()
+        $installments = $transaction->installments()
             ->whereIn('status', ['unpaid', 'partial'])
-            ->orderBy('bulan_ke', 'asc')
+            ->orderBy('installment_number', 'asc')
             ->get();
 
-        foreach ($daftarAngsuran as $angsuran) {
-            if ($sisaDanaMembayar <= 0) break;
+        foreach ($installments as $installment) {
+            if ($remainingFund <= 0) break;
 
-            // Hitung kebutuhan angsuran ini
-            $kebutuhan = $angsuran->sisa_setelah_bayar;
+            $needed          = $installment->remaining_amount;
+            $allocatedAmount = min($remainingFund, $needed);
 
-            // Cek porsi untuk dibayar pada angsuran ini
-            $nominalAlokasi = min($sisaDanaMembayar, $kebutuhan);
-
-            // Buat record alokasi pembayaran pivot
-            AlokasiPembayaranFleksibel::create([
-                'fleksible_payment_id' => $pembayaran->id,
-                'angsuran_id' => $angsuran->id,
-                'nominal_dialokasikan' => $nominalAlokasi,
+            FlexiblePaymentAllocation::create([
+                'flexible_payment_id' => $payment->id,
+                'installment_id'      => $installment->id,
+                'allocated_amount'    => $allocatedAmount,
             ]);
 
-            // Update status/jumlah pada model Angsuran terkait
-            // Ini akan memanggil logic yang mengurangkan sisa_setelah_bayar berdasarkan alokasi_id
-            $angsuran->updatePembayaran();
+            $installment->updatePayment();
 
-            // Kurangi sisa dana si customer
-            $sisaDanaMembayar -= $nominalAlokasi;
+            $remainingFund -= $allocatedAmount;
         }
     }
 
     /**
      * Mengecek dan auto set transaksi menjadi paid_off
      */
-    public function checkAndSetPaidOff(SalesTransaction $transaction)
+    public function checkAndSetPaidOff(Transaction $transaction)
     {
-        // Menyegarkan model untuk mendapatkan total_paid terbaru
         $transaction->refresh();
-        
-        // Jika lunas
+
         if ($transaction->total_paid >= $transaction->total_amount) {
             $transaction->update([
-                'status_penjualan' => 'paid_off',
-                'tanggal_pelunasan' => now()->toDateString(),
+                'status'          => 'paid_off',
+                'settlement_date' => now()->toDateString(),
             ]);
         }
     }

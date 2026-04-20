@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\SalesTransaction;
+use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Exception;
 use Carbon\Carbon;
@@ -10,34 +10,37 @@ use Carbon\Carbon;
 class SalesTransactionService
 {
     /**
-     * Store new Sales Transaction
+     * Store new Transaction
      */
     public function createTransaction(array $data)
     {
         DB::beginTransaction();
 
         try {
-            // Note: owner_id will be auto-set by the model boot if auth()->check()
-            $transaction = SalesTransaction::create($data);
+            $transaction = Transaction::create($data);
 
-            // Ubah status kavling menjadi sold karena sudah dibeli
-            $kavling = \App\Models\Kavling::find($transaction->kavling_id);
-            if ($kavling) {
-                // Bisa disesuaikan jadi 'sold', 'reserved' atau 'active' sesuai preferensi
-                $kavling->updateStatus('sold');
+            // Ubah status plot menjadi sold
+            $plot = \App\Models\Plot::find($transaction->plot_id);
+            if ($plot) {
+                $plot->updateStatus('sold');
             }
 
-            if ($transaction->metode_pembayaran === 'angsuran_in_house') {
-                $this->handleAngsuranInHouse($transaction);
-            } elseif ($transaction->metode_pembayaran === 'kpr_bank') {
-                $this->handleKprBank($transaction);
-            } elseif ($transaction->metode_pembayaran === 'cash_keras') {
-                $this->handleCashKeras($transaction);
+            if ($transaction->payment_method === 'installment') {
+                $this->handleInstallment($transaction);
+            } elseif ($transaction->payment_method === 'bank_mortgage') {
+                $this->handleBankMortgage($transaction);
+            } elseif ($transaction->payment_method === 'full_cash') {
+                $this->handleFullCash($transaction);
             }
 
             DB::commit();
 
-            return $transaction->load('angsuran');
+            // Sync stats setelah commit
+            if ($transaction->sales_staff_id) {
+                $this->syncSalesStats($transaction->sales_staff_id);
+            }
+
+            return $transaction->load('installments');
         } catch (Exception $e) {
             DB::rollBack();
             throw $e;
@@ -45,66 +48,66 @@ class SalesTransactionService
     }
 
     /**
-     * Update existing Sales Transaction
+     * Update existing Transaction
      */
-    public function updateTransaction(SalesTransaction $transaction, array $data)
+    public function updateTransaction(Transaction $transaction, array $data)
     {
         DB::beginTransaction();
 
         try {
             // Evaluasi Uang Muka
-            if (array_key_exists('uang_muka_nominal', $data) && $data['uang_muka_nominal'] != $transaction->uang_muka_nominal) {
-                if ($transaction->status_dp === 'paid') {
+            if (array_key_exists('down_payment_amount', $data) && $data['down_payment_amount'] != $transaction->down_payment_amount) {
+                if ($transaction->dp_status === 'paid') {
                     throw new Exception('Tidak dapat mengubah nominal DP karena status DP sudah lunas.');
                 }
             }
 
             // Recalculate Totals
-            $hargaDasar = array_key_exists('harga_dasar', $data) ? $data['harga_dasar'] : $transaction->harga_dasar;
-            
-            // Diskon
-            $tipeDiskon = $data['tipe_diskon'] ?? 'nominal';
-            if (array_key_exists('promo_diskon', $data)) {
-                if ($tipeDiskon === 'persen') {
-                    $promoDiskonNominal = $hargaDasar * ($data['promo_diskon'] / 100);
+            $basePrice = array_key_exists('base_price', $data) ? $data['base_price'] : $transaction->base_price;
+
+            $discountType = $data['discount_type'] ?? 'nominal';
+            if (array_key_exists('discount_amount', $data)) {
+                if ($discountType === 'percent') {
+                    $discountNominal = $basePrice * ($data['discount_amount'] / 100);
                 } else {
-                    $promoDiskonNominal = $data['promo_diskon'];
+                    $discountNominal = $data['discount_amount'];
                 }
-                $data['promo_diskon'] = $promoDiskonNominal; // Store absolute nominal to DB
+                $data['discount_amount'] = $discountNominal;
             } else {
-                $promoDiskonNominal = $transaction->promo_diskon;
+                $discountNominal = $transaction->discount_amount;
             }
 
-            $hargaNetto = $hargaDasar - $promoDiskonNominal;
+            $netPrice  = $basePrice - $discountNominal;
+            $ppjbFee   = array_key_exists('ppjb_fee', $data) ? $data['ppjb_fee'] : $transaction->ppjb_fee;
+            $shmFee    = array_key_exists('shm_fee', $data) ? $data['shm_fee'] : $transaction->shm_fee;
+            $otherFees = array_key_exists('other_fees', $data) ? $data['other_fees'] : $transaction->other_fees;
+            $bookingFee = array_key_exists('booking_fee', $data) ? $data['booking_fee'] : $transaction->booking_fee;
+            $isIncluded = array_key_exists('is_unit_included', $data) ? $data['is_unit_included'] : $transaction->is_unit_included;
 
-            $biayaPpjb = array_key_exists('biaya_ppjb', $data) ? $data['biaya_ppjb'] : $transaction->biaya_ppjb;
-            $biayaShm  = array_key_exists('biaya_shm', $data) ? $data['biaya_shm'] : $transaction->biaya_shm;
-            $biayaLain = array_key_exists('biaya_lain', $data) ? $data['biaya_lain'] : $transaction->biaya_lain;
+            $grandTotal = $netPrice + $ppjbFee + $shmFee + $otherFees + ($isIncluded ? 0 : $bookingFee);
 
-            $grandTotal = $hargaNetto + $biayaPpjb + $biayaShm + $biayaLain;
-
-            $data['harga_dasar'] = $hargaDasar;
-            $data['harga_netto'] = $hargaNetto;
-            $data['grand_total'] = $grandTotal;
-            $data['total_amount'] = $grandTotal;
+            $data['base_price']    = $basePrice;
+            $data['net_price']     = $netPrice;
+            $data['grand_total']   = $grandTotal;
+            $data['total_amount']  = $grandTotal;
 
             $transaction->update($data);
 
-            if ($transaction->metode_pembayaran === 'angsuran_in_house') {
-                $this->handleUpdateAngsuranInHouse($transaction);
-            } elseif ($transaction->metode_pembayaran === 'kpr_bank') {
-                // Hapus angsuran berstatus unpaid karena pindah metode pembayaran
-                $transaction->angsuran()->whereNotIn('status', ['paid', 'partial'])->delete();
-                $this->handleKprBank($transaction);
-            } elseif ($transaction->metode_pembayaran === 'cash_keras') {
-                // Hapus angsuran berstatus unpaid karena pindah metode pembayaran
-                $transaction->angsuran()->whereNotIn('status', ['paid', 'partial'])->delete();
-                $this->handleCashKeras($transaction);
+            if ($transaction->payment_method === 'installment') {
+                $this->handleUpdateInstallment($transaction);
+            } elseif ($transaction->payment_method === 'bank_mortgage') {
+                $transaction->installments()->whereNotIn('status', ['paid', 'partial'])->delete();
+                $this->handleBankMortgage($transaction);
+            } elseif ($transaction->payment_method === 'full_cash') {
+                $transaction->installments()->whereNotIn('status', ['paid', 'partial'])->delete();
+                $this->handleFullCash($transaction);
             }
 
             DB::commit();
 
-            return $transaction->load('angsuran');
+            $this->syncSalesStats($transaction->sales_staff_id);
+
+            return $transaction->load('installments');
         } catch (Exception $e) {
             DB::rollBack();
             throw $e;
@@ -112,162 +115,152 @@ class SalesTransactionService
     }
 
     /**
-     * Handle Update Angsuran In House
+     * Handle Update Installment
      */
-    private function handleUpdateAngsuranInHouse(SalesTransaction $transaction)
+    private function handleUpdateInstallment(Transaction $transaction)
     {
-        if (empty($transaction->tenor) || $transaction->tenor < 1) {
-            throw new Exception('Tenor wajib diisi untuk metode angsuran_in_house');
+        if (empty($transaction->tenor_months) || $transaction->tenor_months < 1) {
+            throw new Exception('Tenor wajib diisi untuk metode angsuran');
         }
 
-        $sisa = $transaction->grand_total;
-        if ($transaction->uang_muka_nominal > 0) {
-            $sisa -= $transaction->uang_muka_nominal;
+        $remaining = $transaction->grand_total;
+        if ($transaction->down_payment_amount > 0) {
+            $remaining -= $transaction->down_payment_amount;
         }
 
-        // Cari angsuran yang statusnya sudah terikat pembayaran (paid/partial)
-        $lockedAngsurans = $transaction->angsuran()->whereIn('status', ['paid', 'partial'])->get();
-        $countLocked = $lockedAngsurans->count();
-        $totalNominalLocked = $lockedAngsurans->sum('nominal');
+        $lockedInstallments   = $transaction->installments()->whereIn('status', ['paid', 'partial'])->get();
+        $countLocked          = $lockedInstallments->count();
+        $totalNominalLocked   = $lockedInstallments->sum('amount');
 
-        $sisaHutangBaru = $sisa - $totalNominalLocked;
-        $sisaTenorBaru = $transaction->tenor - $countLocked;
+        $remainingDebt   = $remaining - $totalNominalLocked;
+        $remainingTenor  = $transaction->tenor_months - $countLocked;
 
-        // Bersihkan semua angsuran yang belum dibayar
-        $transaction->angsuran()->whereNotIn('status', ['paid', 'partial'])->delete();
+        $transaction->installments()->whereNotIn('status', ['paid', 'partial'])->delete();
 
-        if ($sisaHutangBaru <= 0) {
-            // Sudah lunas atau lebih bayar, tidak perlu buat angsuran baru
-            return;
+        if ($remainingDebt <= 0) return;
+
+        if ($remainingTenor < 1) {
+            throw new Exception(
+                "Sisa tenor tidak mencukupi untuk tagihan sebesar " . number_format($remainingDebt) .
+                ". Sudah ada $countLocked bulan yang terbayar. Harap tambah jumlah tenor."
+            );
         }
 
-        if ($sisaTenorBaru < 1) {
-            throw new Exception("Sisa tenor tidak mencukupi untuk tagihan sebesar " . number_format($sisaHutangBaru) . ". Sudah ada $countLocked bulan yang terbayar. Harap tambah jumlah tenor.");
-        }
+        $amountPerMonth = $remainingDebt / $remainingTenor;
+        $startDate      = $transaction->booking_date ? Carbon::parse($transaction->booking_date) : now();
+        $dueDay         = $transaction->due_day ?? $startDate->day;
 
-        $nominalPerBulan = $sisaHutangBaru / $sisaTenorBaru;
-        $tanggalMulai = $transaction->tanggal_booking ? \Carbon\Carbon::parse($transaction->tanggal_booking) : now();
-        $hariJatuhTempo = $transaction->tanggal_jatuh_tempo ?? $tanggalMulai->day;
+        for ($i = 1; $i <= $remainingTenor; $i++) {
+            $monthNumber = $countLocked + $i;
+            $date        = $startDate->copy()->addMonths($monthNumber);
+            $date->day(min($dueDay, $date->daysInMonth));
 
-        for ($i = 1; $i <= $sisaTenorBaru; $i++) {
-            $bulanKe = $countLocked + $i;
-            $tanggal = $tanggalMulai->copy()->addMonths($bulanKe);
-            $tanggal->day(min($hariJatuhTempo, $tanggal->daysInMonth));
-
-            // Fix pembulatan di bulan terakhir
-            if ($i == $sisaTenorBaru) {
-                $nominalPerBulan = $sisaHutangBaru;
+            if ($i == $remainingTenor) {
+                $amountPerMonth = $remainingDebt;
             }
 
-            $transaction->angsuran()->create([
-                'bulan_ke' => $bulanKe,
-                'tanggal_jatuh_tempo' => $tanggal->toDateString(),
-                'nominal' => $nominalPerBulan,
-                'sisa_setelah_bayar' => $nominalPerBulan,
-                'status' => 'unpaid',
-                'keterangan' => 'Angsuran ke-' . $bulanKe
+            $transaction->installments()->create([
+                'installment_number' => $monthNumber,
+                'due_date'           => $date->toDateString(),
+                'amount'             => $amountPerMonth,
+                'remaining_amount'   => $amountPerMonth,
+                'status'             => 'unpaid',
+                'notes'              => 'Angsuran ke-' . $monthNumber,
             ]);
 
-            $sisaHutangBaru -= $nominalPerBulan;
+            $remainingDebt -= $amountPerMonth;
         }
     }
 
     /**
-     * Handle Angsuran In House
+     * Handle Angsuran In House (installment)
      */
-    private function handleAngsuranInHouse(SalesTransaction $transaction)
+    private function handleInstallment(Transaction $transaction)
     {
-        if (empty($transaction->tenor) || $transaction->tenor < 1) {
-            throw new Exception('Tenor wajib diisi untuk angsuran_in_house');
+        if (empty($transaction->tenor_months) || $transaction->tenor_months < 1) {
+            throw new Exception('Tenor wajib diisi untuk metode angsuran');
         }
 
-        $sisa = $transaction->grand_total;
-        
-        // Parse tanggal_booking sebagai acuan
-        $tanggalMulai = $transaction->tanggal_booking ? \Carbon\Carbon::parse($transaction->tanggal_booking) : now();
+        $remaining  = $transaction->grand_total;
+        $startDate  = $transaction->booking_date ? Carbon::parse($transaction->booking_date) : now();
 
-        // DP doesn't generate angsuran item, just directly reduce from debt total.
-        if ($transaction->uang_muka_nominal > 0) {
-            $sisa -= $transaction->uang_muka_nominal;
+        if ($transaction->down_payment_amount > 0) {
+            $remaining -= $transaction->down_payment_amount;
         }
 
-        // Hitung nominal rata pembagian ke tenor
-        $nominalPerBulan = $sisa / $transaction->tenor;
+        $amountPerMonth = $remaining / $transaction->tenor_months;
+        $dueDay         = $transaction->due_day ?? $startDate->day;
 
-        $hariJatuhTempo = $transaction->tanggal_jatuh_tempo ?? $tanggalMulai->day;
+        for ($i = 1; $i <= $transaction->tenor_months; $i++) {
+            $date = $startDate->copy()->addMonths($i);
+            $date->day(min($dueDay, $date->daysInMonth));
 
-        for ($i = 1; $i <= $transaction->tenor; $i++) {
-            $tanggal = $tanggalMulai->copy()->addMonths($i);
-            // Handle number of days limit like Feb 28th
-            $tanggal->day(min($hariJatuhTempo, $tanggal->daysInMonth));
-
-            // Fix pembulatan di bulan terakhir
-            if ($i == $transaction->tenor) {
-                $nominalPerBulan = $sisa;
+            if ($i == $transaction->tenor_months) {
+                $amountPerMonth = $remaining;
             }
 
-            $transaction->angsuran()->create([
-                'bulan_ke' => $i,
-                'tanggal_jatuh_tempo' => $tanggal->toDateString(),
-                'nominal' => $nominalPerBulan,
-                'sisa_setelah_bayar' => $nominalPerBulan,
-                'status' => 'unpaid',
-                'keterangan' => 'Angsuran ke-' . $i
+            $transaction->installments()->create([
+                'installment_number' => $i,
+                'due_date'           => $date->toDateString(),
+                'amount'             => $amountPerMonth,
+                'remaining_amount'   => $amountPerMonth,
+                'status'             => 'unpaid',
+                'notes'              => 'Angsuran ke-' . $i,
             ]);
 
-            $sisa -= $nominalPerBulan;
+            $remaining -= $amountPerMonth;
         }
     }
 
     /**
      * Handle KPR Bank
      */
-    private function handleKprBank(SalesTransaction $transaction)
+    private function handleBankMortgage(Transaction $transaction)
     {
-        // KPR: Sisa ditangani bank, tidak ada angsuran dari dev.
-        // Asumsi nilai status_kpr = 1 artinya pending/processing
-        // if(!$transaction->status_kpr) { $transaction->update(['status_kpr' => 1]); }
+        // KPR: Sisa ditangani bank, tidak ada angsuran dari developer.
     }
 
     /**
-     * Handle Cash Keras
+     * Handle Full Cash
      */
-    private function handleCashKeras(SalesTransaction $transaction)
+    private function handleFullCash(Transaction $transaction)
     {
-        // Tidak ada angsuran. Semua tagihan dihandle langsung dengan PembayaranFleksibel nanti yang menyasar transaction grand_total
+        // Tidak ada angsuran. Pembayaran dilakukan via flexible payment.
     }
 
     /**
      * Handle Cancel Refund
      */
-    public function handleCancelRefund(SalesTransaction $transaction, $nominal)
+    public function handleCancelRefund(Transaction $transaction, $nominal)
     {
         DB::beginTransaction();
         try {
-            // Ubah status penjualan menjadi refund
-            $transaction->update(['status_penjualan' => 'refund']);
+            $transaction->update(['status' => 'refunded']);
 
-            // Kembalikan kavling ke tersedia
-            $kavling = \App\Models\Kavling::find($transaction->kavling_id);
-            if ($kavling) {
-                $kavling->updateStatus('available');
+            // Kembalikan plot ke tersedia
+            $plot = \App\Models\Plot::find($transaction->plot_id);
+            if ($plot) {
+                $plot->updateStatus('available');
             }
 
             // Record pengeluaran di CashFlow
             if ($nominal > 0) {
                 \App\Models\CashFlow::create([
-                    'tanggal' => now()->toDateString(),
-                    'tipe_transaksi' => 'pengeluaran',
-                    'kategori' => 'Refund Penjualan',
-                    'nominal' => $nominal,
-                    'keterangan' => 'Refund pembatalan transaksi: ' . $transaction->nomor_transaksi,
-                    // Karena ini bukan dari form UI manual, kita biarkan reference kosong atau menunjuk ke penjualan
-                    'referensi_type' => SalesTransaction::class,
-                    'referensi_id' => $transaction->id,
+                    'date'               => now()->toDateString(),
+                    'type'               => 'expense',
+                    'category'           => 'Refund Penjualan',
+                    'amount'             => $nominal,
+                    'notes'              => 'Refund pembatalan transaksi: ' . $transaction->transaction_number,
+                    'referenceable_type' => Transaction::class,
+                    'referenceable_id'   => $transaction->id,
                 ]);
             }
 
             DB::commit();
+
+            if ($transaction->sales_staff_id) {
+                $this->syncSalesStats($transaction->sales_staff_id);
+            }
         } catch (Exception $e) {
             DB::rollBack();
             throw $e;
@@ -277,55 +270,82 @@ class SalesTransactionService
     /**
      * Handle Oper Kredit
      */
-    public function handleOperKredit(SalesTransaction $transaction, $newBuyerId, $newSalesId = null)
+    public function handleOperKredit(Transaction $transaction, $newBuyerId, $newSalesStaffId = null)
     {
-        $updateData = ['buyer_id' => $newBuyerId];
-        if ($newSalesId) {
-            $updateData['sales_id'] = $newSalesId;
+        $oldSalesStaffId = $transaction->sales_staff_id;
+        $updateData      = ['buyer_id' => $newBuyerId];
+        if ($newSalesStaffId) {
+            $updateData['sales_staff_id'] = $newSalesStaffId;
         }
         $transaction->update($updateData);
+
+        if ($oldSalesStaffId) $this->syncSalesStats($oldSalesStaffId);
+        if ($newSalesStaffId && $newSalesStaffId != $oldSalesStaffId) $this->syncSalesStats($newSalesStaffId);
     }
 
     /**
      * Handle Hapus Penjualan
      */
-    public function handleHapusPenjualan(SalesTransaction $transaction)
+    public function handleHapusPenjualan(Transaction $transaction)
     {
+        $salesStaffId = $transaction->sales_staff_id;
         DB::beginTransaction();
         try {
-            // Hapus Payment History dan relasi terkait
-            // Menghapus CashFlow yang referensinya mengarah ke PaymentHistory milik transaksi ini
-            $paymentHistories = $transaction->paymentHistory()->pluck('id');
-            if ($paymentHistories->isNotEmpty()) {
-                \App\Models\CashFlow::where('referensi_type', \App\Models\PaymentHistory::class)
-                                    ->whereIn('referensi_id', $paymentHistories)
+            // Hapus CashFlow yang referensinya ke PaymentHistory milik transaksi ini
+            $paymentHistoryIds = $transaction->paymentHistories()->pluck('id');
+            if ($paymentHistoryIds->isNotEmpty()) {
+                \App\Models\CashFlow::where('referenceable_type', \App\Models\PaymentHistory::class)
+                                    ->whereIn('referenceable_id', $paymentHistoryIds)
                                     ->delete();
             }
 
-            // Hapus CashFlow yang secara langsung mereferensikan transaksi ini (misalnya dari Refund di atas)
-            \App\Models\CashFlow::where('referensi_type', SalesTransaction::class)
-                                ->where('referensi_id', $transaction->id)
+            // Hapus CashFlow yang secara langsung mereferensikan transaksi ini
+            \App\Models\CashFlow::where('referenceable_type', Transaction::class)
+                                ->where('referenceable_id', $transaction->id)
                                 ->delete();
 
-            // Hapus dependensi angsuran, fleksible_payments, payment_history akan otomatis terhapus jika di db ada cascade,
-            // tapi kita lakukan manual untuk amannya.
-            $transaction->angsuran()->delete();
-            $transaction->fleksiblePayments()->delete();
-            $transaction->paymentHistory()->delete();
+            // Hapus dependensi (cascade sudah di DB, tapi kita manual untuk aman)
+            $transaction->installments()->delete();
+            $transaction->flexiblePayments()->delete();
+            $transaction->paymentHistories()->delete();
 
-            // Kembalikan kavling ke tersedia
-            $kavling = \App\Models\Kavling::find($transaction->kavling_id);
-            if ($kavling) {
-                $kavling->updateStatus('available');
+            // Kembalikan plot ke tersedia
+            $plot = \App\Models\Plot::find($transaction->plot_id);
+            if ($plot) {
+                $plot->updateStatus('available');
             }
 
-            // Hapus transaksi bapaknya
             $transaction->delete();
 
             DB::commit();
+
+            if ($salesStaffId) {
+                $this->syncSalesStats($salesStaffId);
+            }
         } catch (Exception $e) {
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Sync Sales Staff Statistics
+     */
+    public function syncSalesStats($salesStaffId)
+    {
+        if (!$salesStaffId) return;
+
+        $salesRecord = \App\Models\SalesStaff::find($salesStaffId);
+        if (!$salesRecord) return;
+
+        $stats = Transaction::where('sales_staff_id', $salesStaffId)
+            ->whereNotIn('status', ['cancelled', 'refunded'])
+            ->selectRaw('count(*) as total_unit, sum(grand_total) as total_rev')
+            ->first();
+
+        $salesRecord->update([
+            'total_units_sold' => $stats->total_unit ?? 0,
+            'total_revenue'    => $stats->total_rev ?? 0,
+        ]);
     }
 }

@@ -5,7 +5,7 @@ export default function AuthLayout({ children, title, subtitle }) {
     return (
         <div className="min-h-screen bg-gray-50 flex">
             {/* Left Box - Image/Brand */}
-            <div className="hidden lg:flex lg:w-1/2 relative bg-[#901C31] justify-center items-center overflow-hidden">
+            <div className="hidden lg:flex lg:w-1/2 relative bg-[#901C31] justify-center items-center overflow-hidden opacity-80">
                 <div className="absolute inset-0 opacity-20 bg-[url('https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=2069&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay"></div>
                 <div className="absolute inset-0 bg-gradient-to-br from-[#901C31]/90 to-[#4a0e19]/90 mix-blend-multiply"></div>
                 <div className="relative z-10 px-12 text-white">

@@ -13,10 +13,10 @@ class Buyer extends Model
 
     protected $fillable = [
         'owner_id',
-        'username',
-        'no_telepon',
+        'name',
+        'phone',
         'email',
-        'alamat',
+        'address',
         'nik',
     ];
 
@@ -26,10 +26,10 @@ class Buyer extends Model
     ];
 
     /**
-     * Relasi dengan penjualan
+     * Relasi dengan transaksi
      */
-    public function SalesTransaction()
+    public function transactions()
     {
-        return $this->hasMany(SalesTransaction::class, 'buyer_id');
+        return $this->hasMany(Transaction::class, 'buyer_id');
     }
 }

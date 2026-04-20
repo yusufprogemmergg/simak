@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from '../../lib/axios';
-import AdminLayout from '../../layouts/AdminLayout';
-import { FiDownload, FiPlus, FiEdit, FiTrash2, FiX } from 'react-icons/fi';
+import { useOutletContext } from 'react-router-dom';
+import { FiDownload, FiPlus, FiEdit, FiTrash2, FiX, FiSearch } from 'react-icons/fi';
+
 export default function Project() {
-    const [user, setUser] = useState(null);
+    const { user } = useOutletContext();
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
     
     // Modal states
     const [showModal, setShowModal] = useState(false);
@@ -14,33 +16,23 @@ export default function Project() {
     // Form states
     const [form, setForm] = useState({
         id: '',
-        nama_project: '',
-        lokasi: '',
-        catatan: '',
-        total_unit: 10
+        name: '',
+        location: '',
+        notes: '',
+        total_units: 10
     });
     
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
     useEffect(() => {
-        const fetchInitialData = async () => {
-            try {
-                const userRes = await axios.get('/api/me');
-                setUser(userRes.data);
-                if (userRes.data.role === 'owner') {
-                    fetchProjects();
-                } else {
-                    setLoading(false);
-                    setError("Anda tidak memiliki akses ke halaman ini.");
-                }
-            } catch (err) {
-                console.error(err);
-                setLoading(false);
-            }
-        };
-        fetchInitialData();
-    }, []);
+        if (user?.role === 'owner') {
+            fetchProjects();
+        } else {
+            setLoading(false);
+            setError("Anda tidak memiliki akses ke halaman ini.");
+        }
+    }, [user]);
 
     const fetchProjects = async () => {
         setLoading(true);
@@ -59,19 +51,19 @@ export default function Project() {
             setIsEdit(true);
             setForm({
                 id: project.id,
-                nama_project: project.nama_project,
-                lokasi: project.lokasi,
-                catatan: project.catatan || '',
-                total_unit: project.total_unit
+                name: project.name,
+                location: project.location,
+                notes: project.notes || '',
+                total_units: project.total_units
             });
         } else {
             setIsEdit(false);
             setForm({
                 id: '',
-                nama_project: '',
-                lokasi: '',
-                catatan: '',
-                total_unit: 10
+                name: '',
+                location: '',
+                notes: '',
+                total_units: 10
             });
         }
         setShowModal(true);
@@ -81,10 +73,10 @@ export default function Project() {
         setShowModal(false);
         setForm({
             id: '',
-            nama_project: '',
-            lokasi: '',
-            catatan: '',
-            total_unit: 10
+            name: '',
+            location: '',
+            notes: '',
+            total_units: 10
         });
         setError(null);
     };
@@ -101,10 +93,10 @@ export default function Project() {
         setError(null);
         try {
             const payload = {
-                nama_project: form.nama_project,
-                lokasi: form.lokasi,
-                catatan: form.catatan,
-                total_unit: form.total_unit
+                name: form.name,
+                location: form.location,
+                notes: form.notes,
+                total_units: form.total_units
             };
 
             if (isEdit) {
@@ -151,16 +143,16 @@ export default function Project() {
     };
 
     const getKavlingStatus = (project) => {
-        if (!project.kavling || project.kavling.length === 0) {
+        if (!project.plots || project.plots.length === 0) {
             return {
-                terjualText: `0 / ${project.total_unit} Terjual`,
+                terjualText: `0 / ${project.total_units} Terjual`,
                 tersediaText: `0 unit tersedia`,
                 percentage: 0
             };
         }
-        const sold = project.kavling.filter(k => k.status === 'sold' || k.status === 'terjual').length;
-        const available = project.kavling.filter(k => k.status === 'available' || k.status === 'tersedia').length;
-        const total = project.total_unit;
+        const sold = project.plots.filter(k => k.status === 'sold').length;
+        const available = project.plots.filter(k => k.status === 'available').length;
+        const total = project.total_units;
         const percentage = total > 0 ? (sold / total) * 100 : 0;
         
         return {
@@ -170,187 +162,165 @@ export default function Project() {
         };
     };
 
-    if (loading && projects.length === 0) return (
-        <AdminLayout user={user}>
-            <div className="flex justify-center p-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-800"></div>
-            </div>
-        </AdminLayout>
-    );
-
-    if (error && projects.length === 0) return (
-        <AdminLayout user={user}>
-            <div className="bg-red-50 p-6 rounded-lg text-red-700">{error}</div>
-        </AdminLayout>
+    const filteredProjects = projects.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.location.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
-        <AdminLayout user={user}>
-            <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                {/* Title removed, user didn't want it */}
-                <div className="flex space-x-3 w-full sm:w-auto justify-end">
+        <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Data Project</h1>
+                    <p className="text-gray-500 text-sm">Kelola master data project perumahan</p>
+                </div>
+                <div className="flex items-center gap-3">
                     <button 
                         onClick={handleExport}
-                        className="flex items-center px-4 py-2 border border-[#901C31] text-[#901C31] bg-white rounded-lg hover:bg-gray-50 font-medium whitespace-nowrap transition-colors"
+                        className="flex items-center justify-center px-4 py-2.5 border border-gray-200 text-gray-600 bg-white rounded-xl hover:bg-gray-50 transition-all font-bold shadow-sm"
                     >
-                        Export Data <FiDownload className="w-4 h-4 ml-2" />
+                        Export <FiDownload className="ml-2 w-4 h-4" />
                     </button>
                     <button 
                         onClick={() => handleOpenModal()}
-                        className="flex items-center px-4 py-2 bg-[#901C31] text-white rounded-lg hover:bg-red-900 font-medium whitespace-nowrap transition-colors"
+                        className="flex items-center justify-center px-6 py-2.5 bg-[#901C31] text-white rounded-xl hover:bg-red-900 transition-all font-bold shadow-lg shadow-red-900/20"
                     >
-                        <FiPlus className="w-5 h-5 mr-2" />
-                        Add Project
+                        <FiPlus className="mr-2 w-5 h-5" /> Tambah Project
                     </button>
                 </div>
             </div>
 
             {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
                     <span className="block sm:inline">{success}</span>
                     <button className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setSuccess(null)}>
-                        <FiX className="h-5 w-5 text-green-600 mt-1" />
+                        <FiX className="h-5 w-5 text-green-600" />
                     </button>
                 </div>
             )}
             
-            {error && <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">{error}</div>}
+            {error && <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 shadow-sm">{error}</div>}
 
-            {/* Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-4 border-b border-gray-50">
+                    <div className="relative max-w-md">
+                        <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input 
+                            type="text" 
+                            className="w-full pl-12 pr-4 py-2 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-[#901C31]/20 transition-all"
+                            placeholder="Cari nama project atau lokasi..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-100">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50/50">
                             <tr>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 tracking-wider">No.</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 tracking-wider">Project Name</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 tracking-wider">Location</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 tracking-wider">Keterangan</th>
-                                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 tracking-wider">Status Kavling</th>
-                                <th scope="col" className="px-6 py-4 text-center text-xs font-bold text-gray-500 tracking-wider">Actions</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Project</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Lokasi</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Keterangan</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Progress Kavling</th>
+                                <th className="px-6 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                            {projects.map((project, index) => {
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                            {loading ? (
+                                <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400 animate-pulse">Memuat data project...</td></tr>
+                            ) : filteredProjects.length === 0 ? (
+                                <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400">Tidak ada project ditemukan</td></tr>
+                            ) : filteredProjects.map((project, index) => {
                                 const status = getKavlingStatus(project);
                                 return (
-                                    <tr key={project.id} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{index + 1}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-800">{project.nama_project}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{project.lokasi}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{project.catatan || '-'}</td>
+                                    <tr key={project.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className="font-bold text-gray-800">{project.name}</span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{project.location}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 italic">{project.notes || '-'}</td>
                                         <td className="px-6 py-4 min-w-[200px]">
-                                            <div className="flex justify-between text-xs mb-1">
-                                                <span className="text-gray-700 font-medium">{status.terjualText}</span>
-                                                <span className="text-gray-500">{status.tersediaText}</span>
+                                            <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                                                <span className="text-[#901C31]">{status.terjualText}</span>
+                                                <span className="text-gray-400">{status.tersediaText}</span>
                                             </div>
-                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                                                 <div 
-                                                    className="bg-[#901C31] h-2 rounded-full" 
+                                                    className="bg-[#901C31] h-full rounded-full transition-all duration-500" 
                                                     style={{ width: `${status.percentage}%` }}
                                                 ></div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <div className="flex justify-center space-x-2">
-                                                <button onClick={() => handleOpenModal(project)} className="flex items-center text-gray-700 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm hover:bg-gray-50 transition-colors font-medium">
-                                                    <FiEdit className="mr-1.5" /> Edit
-                                                </button>
-                                                <button onClick={() => handleDelete(project.id)} className="flex items-center text-[#901C31] bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm hover:bg-gray-50 transition-colors font-medium">
-                                                    <FiTrash2 className="mr-1.5" /> Delete
-                                                </button>
+                                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                                            <div className="flex items-center justify-center space-x-1">
+                                                <button onClick={() => handleOpenModal(project)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Edit"><FiEdit /></button>
+                                                <button onClick={() => handleDelete(project.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus"><FiTrash2 /></button>
                                             </div>
                                         </td>
                                     </tr>
                                 );
                             })}
-                            {projects.length === 0 && (
-                                <tr>
-                                    <td colSpan="6" className="px-6 py-8 text-center text-gray-500">Belum ada project. Mulai dengan membuat project baru.</td>
-                                </tr>
-                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Modal Form with glassmorphism/dark blur background */}
+            {/* Modal */}
             {showModal && (
                 <div className="fixed inset-0 z-50 overflow-y-auto">
                     <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
-                        {/* THE REQUESTED TRANSPARENT BLUR DARK BACKGROUND */}
-                        <div 
-                            className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" 
-                            onClick={handleCloseModal}
-                        ></div>
-                        
-                        <div className="relative inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-2xl border border-gray-100">
-                            <h3 className="text-xl font-bold leading-6 text-gray-900 mb-6 border-b pb-4">
-                                {isEdit ? 'Edit Project' : 'Add New Project'}
-                            </h3>
-                            <form onSubmit={handleSubmit}>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Project Name <span className="text-red-500">*</span></label>
-                                        <input 
-                                            type="text" 
-                                            name="nama_project"
-                                            required 
-                                            className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-[#901C31] focus:border-[#901C31] sm:text-sm transition-colors" 
-                                            value={form.nama_project} 
-                                            onChange={handleChange}
-                                            placeholder="Ex: Perumahan Indah"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Location <span className="text-red-500">*</span></label>
-                                        <input 
-                                            type="text" 
-                                            name="lokasi"
-                                            required 
-                                            className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-[#901C31] focus:border-[#901C31] sm:text-sm transition-colors" 
-                                            value={form.lokasi} 
-                                            onChange={handleChange}
-                                            placeholder="Ex: Jl. Merdeka Kav. 12"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Total Unit (Kavling) <span className="text-red-500">*</span></label>
-                                        <input 
-                                            type="number" 
-                                            name="total_unit"
-                                            min="1"
-                                            required 
-                                            className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-[#901C31] focus:border-[#901C31] sm:text-sm transition-colors" 
-                                            value={form.total_unit} 
-                                            onChange={handleChange}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
-                                        <textarea 
-                                            name="catatan"
-                                            className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-[#901C31] focus:border-[#901C31] sm:text-sm transition-colors" 
-                                            value={form.catatan} 
-                                            onChange={handleChange}
-                                            rows="3"
-                                            placeholder="Opsional"
-                                        ></textarea>
-                                    </div>
+                        <div className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onClick={handleCloseModal}></div>
+                        <div className="relative inline-block w-full max-w-md p-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100">
+                            <h3 className="text-xl font-bold text-gray-900 mb-6">{isEdit ? 'Edit Project' : 'Project Baru'}</h3>
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nama Project</label>
+                                    <input 
+                                        name="name" 
+                                        required 
+                                        placeholder="Ex: Perumahan Indah"
+                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
+                                        value={form.name} 
+                                        onChange={handleChange} 
+                                    />
                                 </div>
-                                <div className="mt-8 flex justify-end space-x-3 pt-4 border-t">
-                                    <button 
-                                        type="button" 
-                                        onClick={handleCloseModal} 
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#901C31]"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button 
-                                        type="submit" 
-                                        className="px-4 py-2 text-sm font-medium text-white bg-[#901C31] rounded-lg shadow-sm hover:bg-red-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#901C31]"
-                                    >
-                                        {isEdit ? 'Update Project' : 'Save Project'}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Lokasi</label>
+                                    <input 
+                                        name="location" 
+                                        required 
+                                        placeholder="Ex: Jl. Merdeka Kav. 12"
+                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
+                                        value={form.location} 
+                                        onChange={handleChange} 
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Unit (Kavling Target)</label>
+                                    <input 
+                                        type="number"
+                                        name="total_units" 
+                                        required 
+                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
+                                        value={form.total_units} 
+                                        onChange={handleChange} 
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Keterangan / Catatan</label>
+                                    <textarea 
+                                        name="notes" 
+                                        className="w-full border-gray-200 rounded-xl py-3 text-sm min-h-[100px] focus:ring-[#901C31]/20 focus:border-[#901C31]" 
+                                        value={form.notes} 
+                                        onChange={handleChange} 
+                                        placeholder="Catatan tambahan (opsional)"
+                                    ></textarea>
+                                </div>
+                                <div className="pt-6 flex justify-end gap-3 border-t border-gray-100 mt-6">
+                                    <button type="button" onClick={handleCloseModal} className="px-6 py-2 text-sm font-bold text-gray-500 hover:text-gray-700">Batal</button>
+                                    <button type="submit" className="px-8 py-2.5 bg-[#901C31] text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/20 hover:bg-red-900 transition-all">
+                                        {isEdit ? 'Update Project' : 'Simpan Project'}
                                     </button>
                                 </div>
                             </form>
@@ -358,6 +328,6 @@ export default function Project() {
                     </div>
                 </div>
             )}
-        </AdminLayout>
+        </div>
     );
 }

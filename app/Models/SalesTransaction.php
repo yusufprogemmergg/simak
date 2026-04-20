@@ -86,7 +86,7 @@ class SalesTransaction extends Model
 
     public function sales()
     {
-        return $this->belongsTo(User::class, 'sales_id');
+        return $this->belongsTo(Sales::class, 'sales_id');
     }
 
     // 🔥 PENTING (multi company)
@@ -124,9 +124,10 @@ class SalesTransaction extends Model
                 $transaction->owner_id = auth()->id();
             }
 
-            // 🔥 Auto generate nomor transaksi
+            // 🔥 Auto generate nomor transaksi berbasis timestamp (untuk menjamin keunikan)
             if (!$transaction->nomor_transaksi) {
-                $transaction->nomor_transaksi = 'TRX-' . now()->format('YmdHis') . rand(100, 999);
+                // Format: TRX-20240417123045999
+                $transaction->nomor_transaksi = 'TRX-' . now()->format('YmdHisv');
             }
 
             // 🔥 Auto set total_amount if missing

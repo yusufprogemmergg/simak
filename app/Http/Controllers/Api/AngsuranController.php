@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Angsuran;
-use App\Models\SalesTransaction;
+use App\Models\Installment;
+use App\Models\Transaction;
 use App\Services\FleksiblePaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,73 +13,72 @@ use Exception;
 
 class AngsuranController extends Controller
 {
-    private $pembayaranService;
+    private $paymentService;
 
-    public function __construct(FleksiblePaymentService $pembayaranService)
+    public function __construct(FleksiblePaymentService $paymentService)
     {
-        $this->pembayaranService = $pembayaranService;
+        $this->paymentService = $paymentService;
     }
 
-    // Direct pay angsuran — verifikasi kepemilikan via SalesTransaction
+    // Direct pay installment — verifikasi kepemilikan via Transaction
     public function payLunas($id, Request $request)
     {
         $request->validate([
-            'tanggal_bayar' => 'required|date'
+            'paid_date' => 'required|date'
         ]);
 
-        // Load angsuran beserta penjualan-nya
-        $angsuran = Angsuran::with('penjualan')->findOrFail($id);
+        $installment = Installment::with('transaction')->findOrFail($id);
 
         // Pastikan transaksi induk milik owner yang login
-        $penjualan = SalesTransaction::where('id', $angsuran->penjualan_id)
+        $transaction = Transaction::where('id', $installment->transaction_id)
             ->where('owner_id', auth()->id())
             ->firstOrFail();
 
-        if ($angsuran->status === 'paid' || $angsuran->sisa_setelah_bayar <= 0) {
+        if ($installment->status === 'paid' || $installment->remaining_amount <= 0) {
             return response()->json(['message' => 'Angsuran ini sudah lunas'], 400);
         }
 
         DB::beginTransaction();
 
         try {
-            $nominalBayar = (float) ($angsuran->sisa_setelah_bayar ?? 0);
+            $amountToPay = (float) ($installment->remaining_amount ?? 0);
 
-            $angsuran->update([
-                'status'          => 'paid',
-                'sisa_setelah_bayar' => 0,
-                'tanggal_bayar'   => $request->tanggal_bayar
+            $installment->update([
+                'status'           => 'paid',
+                'remaining_amount' => 0,
+                'paid_date'        => $request->paid_date
             ]);
 
-            $penjualan->total_paid = ($penjualan->total_paid ?? 0) + $nominalBayar;
-            $penjualan->save();
+            $transaction->total_paid = ($transaction->total_paid ?? 0) + $amountToPay;
+            $transaction->save();
 
-            // Record Payment History
             $payment = \App\Models\PaymentHistory::create([
-                'sales_transaction_id' => $penjualan->id,
-                'tanggal'              => $request->tanggal_bayar,
-                'keterangan'           => 'Angsuran Payment ke - ' . $angsuran->bulan_ke,
-                'amount'               => $nominalBayar
+                'transaction_id'     => $transaction->id,
+                'date'               => $request->paid_date,
+                'notes'              => 'Angsuran Payment ke - ' . $installment->installment_number,
+                'amount'             => $amountToPay,
+                'referenceable_type' => Installment::class,
+                'referenceable_id'   => $installment->id,
             ]);
 
-            // Auto Journal ke Buku Kas
             \App\Models\CashFlow::create([
-                'tanggal'        => $request->tanggal_bayar,
-                'tipe_transaksi' => 'pemasukan',
-                'kategori'       => 'Cicilan Angsuran',
-                'nominal'        => $nominalBayar,
-                'keterangan'     => 'Pembayaran Cicilan Angsuran ke-' . $angsuran->bulan_ke . ' Transaksi: ' . $penjualan->nomor_transaksi,
-                'referensi_type' => \App\Models\PaymentHistory::class,
-                'referensi_id'   => $payment->id,
+                'date'               => $request->paid_date,
+                'type'               => 'income',
+                'category'           => 'Cicilan Angsuran',
+                'amount'             => $amountToPay,
+                'notes'              => 'Pembayaran Cicilan Angsuran ke-' . $installment->installment_number . ' Transaksi: ' . $transaction->transaction_number,
+                'referenceable_type' => \App\Models\PaymentHistory::class,
+                'referenceable_id'   => $payment->id,
             ]);
 
-            $this->pembayaranService->checkAndSetPaidOff($penjualan);
+            $this->paymentService->checkAndSetPaidOff($transaction);
 
             DB::commit();
 
             return response()->json([
-                'message'              => 'Angsuran ke-' . $angsuran->bulan_ke . ' berhasil langsung dilunasi',
-                'data_angsuran'        => $angsuran->fresh(),
-                'total_paid_sekarang'  => $penjualan->fresh()->total_paid
+                'message'         => 'Angsuran ke-' . $installment->installment_number . ' berhasil langsung dilunasi',
+                'data_installment' => $installment->fresh(),
+                'total_paid_now'   => $transaction->fresh()->total_paid
             ]);
 
         } catch (Exception $e) {

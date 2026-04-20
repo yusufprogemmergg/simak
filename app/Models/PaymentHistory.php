@@ -9,27 +9,37 @@ class PaymentHistory extends Model
 {
     use HasFactory;
 
-    protected $table = 'payment_history';
+    protected $table = 'payment_histories';
 
     protected $fillable = [
-        'sales_transaction_id',
-        'tanggal',
-        'keterangan',
+        'transaction_id',
+        'date',
+        'notes',
         'amount',
+        'referenceable_type',
+        'referenceable_id',
     ];
 
     protected $casts = [
-        'tanggal' => 'date', 
-        'amount' => 'decimal:2',
+        'date'       => 'date',
+        'amount'     => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
 
     /**
+     * Relasi polimorfik ke target pembayaran (DP, Angsuran, atau Flexible)
+     */
+    public function referenceable()
+    {
+        return $this->morphTo();
+    }
+
+    /**
      * Relasi dengan transaksi penjualan
      */
-    public function salesTransaction()
+    public function transaction()
     {
-        return $this->belongsTo(SalesTransaction::class, 'sales_transaction_id');
+        return $this->belongsTo(Transaction::class, 'transaction_id');
     }
 }

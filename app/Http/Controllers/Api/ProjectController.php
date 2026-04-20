@@ -12,7 +12,7 @@ class ProjectController extends Controller
     // GET all — hanya project milik owner yang login
     public function index()
     {
-        $data = Project::with('kavling')
+        $data = Project::with('plots')
             ->where('owner_id', auth()->id())
             ->latest()
             ->get();
@@ -23,7 +23,7 @@ class ProjectController extends Controller
     // GET by id
     public function show($id)
     {
-        $data = Project::with('kavling')
+        $data = Project::with('plots')
             ->where('owner_id', auth()->id())
             ->findOrFail($id);
 
@@ -34,20 +34,18 @@ class ProjectController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'nama_project' => 'required|string',
-            'lokasi'       => 'required|string',
-            'catatan'      => 'nullable|string',
-            'total_unit'   => 'required|integer',
+            'name'        => 'required|string',
+            'location'    => 'required|string',
+            'notes'       => 'nullable|string',
+            'total_units' => 'required|integer',
         ]);
 
-        $user = auth()->user();
-
         $data = Project::create([
-            'owner_id'     => $user->id,
-            'nama_project' => $validated['nama_project'],
-            'lokasi'       => $validated['lokasi'],
-            'catatan'      => $validated['catatan'] ?? null,
-            'total_unit'   => $validated['total_unit'],
+            'owner_id'    => auth()->id(),
+            'name'        => $validated['name'],
+            'location'    => $validated['location'],
+            'notes'       => $validated['notes'] ?? null,
+            'total_units' => $validated['total_units'],
         ]);
 
         return response()->json([
@@ -60,10 +58,10 @@ class ProjectController extends Controller
     public function update(Request $request, $id)
     {
         $validated = $request->validate([
-            'nama_project' => 'sometimes|string',
-            'lokasi'       => 'sometimes|string',
-            'catatan'      => 'nullable|string',
-            'total_unit'   => 'sometimes|integer',
+            'name'        => 'sometimes|string',
+            'location'    => 'sometimes|string',
+            'notes'       => 'nullable|string',
+            'total_units' => 'sometimes|integer',
         ]);
 
         $project = Project::where('id', $id)
@@ -78,7 +76,7 @@ class ProjectController extends Controller
         ]);
     }
 
-    // DELETE — hanya bisa hapus project milik sendiri
+    // DELETE
     public function destroy($id)
     {
         $project = Project::where('id', $id)
@@ -87,12 +85,10 @@ class ProjectController extends Controller
 
         $project->delete();
 
-        return response()->json([
-            'message' => 'Project berhasil dihapus'
-        ]);
+        return response()->json(['message' => 'Project berhasil dihapus']);
     }
 
-    // EXPORT EXCEL — download semua project milik owner
+    // EXPORT EXCEL
     public function exportExcel()
     {
         return (new ProjectExport(auth()->id()))->download();
