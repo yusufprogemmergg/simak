@@ -19,7 +19,7 @@ export default function Toast({ toast }) {
             ) : (
                 <FiCheckCircle className="text-green-400" />
             )}
-            <span className="text-sm font-bold">{toast.message}</span>
+            <span className="text-sm font-bold whitespace-pre-line">{toast.message}</span>
         </div>
     );
 }

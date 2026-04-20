@@ -131,6 +131,13 @@ class SalesTransactionController extends Controller
             'notes'                => 'nullable|string',
             'booking_fee'          => 'nullable|numeric|min:0',
             'is_unit_included'     => 'nullable|boolean',
+        ], [
+            'plot_id.required'        => 'Unit/Kavling wajib dipilih.',
+            'buyer_id.required'       => 'Pelanggan wajib dipilih.',
+            'sales_staff_id.required' => 'Marketing wajib dipilih.',
+            'payment_method.required' => 'Metode pembayaran wajib dipilih.',
+            'booking_date.required'   => 'Tanggal booking wajib diisi.',
+            'status.required'         => 'Status transaksi wajib diisi.',
         ]);
 
         try {
@@ -357,6 +364,10 @@ class SalesTransactionController extends Controller
             'refund_amount'  => 'required_if:cancel_type,refund|numeric|min:0',
             'new_buyer_id'   => 'required_if:cancel_type,transfer_credit|exists:buyers,id',
             'new_sales_staff_id' => 'nullable|exists:users,id',
+        ], [
+            'cancel_type.required'   => 'Tipe pembatalan wajib dipilih.',
+            'refund_amount.required_if' => 'Nominal pengembalian wajib diisi jika tipe pembatalan adalah refund.',
+            'new_buyer_id.required_if'  => 'Pembeli baru wajib dipilih untuk oper kredit.',
         ]);
 
         try {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Plot;
 use App\Models\Project;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use App\Exports\KavlingExport;
 
 class KavlingController extends Controller
@@ -41,10 +42,16 @@ class KavlingController extends Controller
     {
         $validated = $request->validate([
             'project_id'  => 'required|exists:projects,id',
-            'plot_number' => 'required|string',
+            'plot_number' => [
+                'required', 'string',
+                // Unique per project, bukan global
+                Rule::unique('plots')->where(fn ($q) => $q->where('project_id', $request->project_id)),
+            ],
             'area'        => 'required|numeric',
             'base_price'  => 'required|numeric',
-            'status'      => 'required|in:available,sold,reserved',
+            'status'      => 'required|in:available,sold,reserved,active',
+        ], [
+            'plot_number.unique' => 'Nomor unit "' . $request->plot_number . '" sudah ada di project ini. Gunakan nomor unit yang berbeda.',
         ]);
 
         Project::where('id', $validated['project_id'])
@@ -64,12 +71,20 @@ class KavlingController extends Controller
     {
         $plot = Plot::whereIn('project_id', $this->ownerProjectIds())->findOrFail($id);
 
+        $projectId = $request->input('project_id', $plot->project_id);
+
         $validated = $request->validate([
             'project_id'  => 'sometimes|exists:projects,id',
-            'plot_number' => 'sometimes|string',
+            'plot_number' => [
+                'sometimes', 'string',
+                // Unique per project, ignore record saat ini
+                Rule::unique('plots')->where(fn ($q) => $q->where('project_id', $projectId))->ignore($id),
+            ],
             'area'        => 'sometimes|numeric',
             'base_price'  => 'sometimes|numeric',
-            'status'      => 'sometimes|in:available,sold,reserved',
+            'status'      => 'sometimes|in:available,sold,reserved,active',
+        ], [
+            'plot_number.unique' => 'Nomor unit "' . $request->plot_number . '" sudah ada di project ini. Gunakan nomor unit yang berbeda.',
         ]);
 
         if (isset($validated['project_id'])) {

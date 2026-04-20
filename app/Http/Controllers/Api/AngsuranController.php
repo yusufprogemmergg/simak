@@ -25,6 +25,9 @@ class AngsuranController extends Controller
     {
         $request->validate([
             'paid_date' => 'required|date'
+        ], [
+            'paid_date.required' => 'Tanggal pembayaran angsuran wajib diisi.',
+            'paid_date.date'     => 'Format tanggal tidak valid.',
         ]);
 
         $installment = Installment::with('transaction')->findOrFail($id);

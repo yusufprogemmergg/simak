@@ -1,27 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from '../../lib/axios';
 import { useOutletContext } from 'react-router-dom';
-import { FiSave, FiUploadCloud, FiImage, FiTrendingUp, FiSettings, FiCheckCircle,     FiBriefcase,
-} from 'react-icons/fi';
+import { FiSave, FiUploadCloud, FiImage, FiTrendingUp, FiSettings, FiCheckCircle, FiBriefcase } from 'react-icons/fi';
+import Toast from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 
 const DEFAULT_FORM_VALUES = {
     name: 'PT. Jaya Abadi Property',
     npwp: '01.234.567.8-012.000',
     email: 'hello@company.com',
-    telepon: '081234567890',
-    alamat: 'Gedung Perkantoran Lt. 3, Jl. Jend. Sudirman No. 123...',
-    nama_ttd_admin: 'Ahmad S.',
-    catatan_kaki_cetakan: 'Pembayaran dianggap sah bila struk bank tercetak penuh',
-    format_faktur: 'INV/{YYYY}/{MM}/{####}',
-    format_kuitansi: 'KW/{YYYY}/{MM}/{DD}/{####}',
+    phone: '081234567890',
+    address: 'Gedung Perkantoran Lt. 3, Jl. Jend. Sudirman No. 123...',
+    admin_signature_name: 'Ahmad S.',
+    print_footer: 'Pembayaran dianggap sah bila struk bank tercetak penuh',
+    invoice_format: 'INV/{YYYY}/{MM}/{####}',
+    receipt_format: 'KW/{YYYY}/{MM}/{DD}/{####}',
 };
 
 export default function CompanyProfile() {
     const { user } = useOutletContext();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [error, setError] = useState(null);
-    const [success, setSuccess] = useState(null);
+    const { toast, showToast } = useToast();
+    const [accessError, setAccessError] = useState(null);
     
     // Form state
     const [profileId, setProfileId] = useState(null);
@@ -37,7 +38,8 @@ export default function CompanyProfile() {
             try {
                 if (user?.role !== 'owner') {
                     setLoading(false);
-                    setError("Anda tidak memiliki akses ke halaman ini.");
+                    setAccessError("Anda tidak memiliki akses ke halaman ini.");
+                    showToast("Anda tidak memiliki akses ke halaman ini.", "error");
                     return;
                 }
 
@@ -53,18 +55,18 @@ export default function CompanyProfile() {
                         name: apiData.name || DEFAULT_FORM_VALUES.name,
                         npwp: apiData.npwp || DEFAULT_FORM_VALUES.npwp,
                         email: apiData.email || DEFAULT_FORM_VALUES.email,
-                        telepon: apiData.telepon || DEFAULT_FORM_VALUES.telepon,
-                        alamat: apiData.alamat || DEFAULT_FORM_VALUES.alamat,
-                        nama_ttd_admin: apiData.nama_ttd_admin || DEFAULT_FORM_VALUES.nama_ttd_admin,
-                        catatan_kaki_cetakan: apiData.catatan_kaki_cetakan || DEFAULT_FORM_VALUES.catatan_kaki_cetakan,
-                        format_faktur: apiData.format_faktur || DEFAULT_FORM_VALUES.format_faktur,
-                        format_kuitansi: apiData.format_kuitansi || DEFAULT_FORM_VALUES.format_kuitansi,
+                        phone: apiData.phone || DEFAULT_FORM_VALUES.phone,
+                        address: apiData.address || DEFAULT_FORM_VALUES.address,
+                        admin_signature_name: apiData.admin_signature_name || DEFAULT_FORM_VALUES.admin_signature_name,
+                        print_footer: apiData.print_footer || DEFAULT_FORM_VALUES.print_footer,
+                        invoice_format: apiData.invoice_format || DEFAULT_FORM_VALUES.invoice_format,
+                        receipt_format: apiData.receipt_format || DEFAULT_FORM_VALUES.receipt_format,
                     });
                     
-                    if (apiData.logo) {
-                        const logoUrl = apiData.logo.startsWith('http') 
-                            ? apiData.logo 
-                            : `${import.meta.env.VITE_APP_URL || 'http://localhost:8000'}/storage/${apiData.logo}`;
+                    if (apiData.logo_path) {
+                        const logoUrl = apiData.logo_path.startsWith('http') 
+                            ? apiData.logo_path 
+                            : `${import.meta.env.VITE_APP_URL || 'http://localhost:8000'}/storage/${apiData.logo_path}`;
                         setLogoPreview(logoUrl);
                     }
                 }
@@ -102,8 +104,6 @@ export default function CompanyProfile() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
-        setError(null);
-        setSuccess(null);
 
         try {
             const formData = new FormData();
@@ -114,7 +114,7 @@ export default function CompanyProfile() {
             });
 
             if (logoFile) {
-                formData.append('logo', logoFile);
+                formData.append('logo_path', logoFile);
             }
 
             let response;
@@ -132,11 +132,16 @@ export default function CompanyProfile() {
                 }
             }
 
-            setSuccess('Profil Perusahaan berhasil disimpan!');
+            showToast('Profil Perusahaan berhasil disimpan!');
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (err) {
             console.error('Submit error:', err);
-            setError(err.response?.data?.message || 'Gagal menyimpan profil perusahaan');
+            const errors = err.response?.data?.errors;
+            if (errors) {
+                showToast(Object.values(errors).flat().join('\n'), 'error');
+            } else {
+                showToast(err.response?.data?.message || 'Gagal menyimpan profil perusahaan', 'error');
+            }
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } finally {
             setSaving(false);
@@ -151,10 +156,10 @@ export default function CompanyProfile() {
         );
     }
 
-    if (error && !form.name) {
+    if (accessError) {
         return (
             <div className="bg-red-50 p-6 rounded-lg text-red-700 font-medium">
-                {error}
+                {accessError}
             </div>
         );
     }
@@ -176,18 +181,7 @@ export default function CompanyProfile() {
                 </button>
             </div>
 
-            {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl relative mb-6 flex items-center animate-fade-in-down shadow-sm">
-                    <FiCheckCircle className="w-5 h-5 mr-3 text-green-500" />
-                    <span className="font-medium">{success}</span>
-                </div>
-            )}
-            
-            {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 shadow-sm">
-                    {error}
-                </div>
-            )}
+            <Toast toast={toast} />
 
             <form onSubmit={handleSubmit} className="space-y-6 pb-20">
                 {/* 1. INFORMASI DASAR */}
@@ -248,9 +242,9 @@ export default function CompanyProfile() {
                             </label>
                             <input 
                                 type="text"
-                                name="telepon"
+                                name="phone"
                                 required
-                                value={form.telepon}
+                                value={form.phone}
                                 onChange={handleChange}
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900"
                                 placeholder="081234567890"
@@ -261,10 +255,10 @@ export default function CompanyProfile() {
                                 Alamat Lengkap <span className="text-red-500">*</span>
                             </label>
                             <textarea 
-                                name="alamat"
+                                name="address"
                                 required
                                 rows="3"
-                                value={form.alamat}
+                                value={form.address}
                                 onChange={handleChange}
                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900"
                                 placeholder="Gedung Perkantoran Lt. 3, Jl. Jend. Sudirman No. 123..."
@@ -327,9 +321,9 @@ export default function CompanyProfile() {
                                 </label>
                                 <input 
                                     type="text"
-                                    name="nama_ttd_admin"
+                                    name="admin_signature_name"
                                     required
-                                    value={form.nama_ttd_admin}
+                                    value={form.admin_signature_name}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900"
                                     placeholder="Ahmad S."
@@ -341,9 +335,9 @@ export default function CompanyProfile() {
                                 </label>
                                 <input 
                                     type="text"
-                                    name="catatan_kaki_cetakan"
+                                    name="print_footer"
                                     required
-                                    value={form.catatan_kaki_cetakan}
+                                    value={form.print_footer}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900"
                                     placeholder="Pembayaran dianggap sah bila struk bank tercetak penuh"
@@ -380,9 +374,9 @@ export default function CompanyProfile() {
                                 </label>
                                 <input 
                                     type="text"
-                                    name="format_faktur"
+                                    name="invoice_format"
                                     required
-                                    value={form.format_faktur}
+                                    value={form.invoice_format}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900 font-mono"
                                     placeholder="INV/{YYYY}/{MM}/{####}"
@@ -394,9 +388,9 @@ export default function CompanyProfile() {
                                 </label>
                                 <input 
                                     type="text"
-                                    name="format_kuitansi"
+                                    name="receipt_format"
                                     required
-                                    value={form.format_kuitansi}
+                                    value={form.receipt_format}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#901C31]/20 focus:border-[#901C31] focus:bg-white transition-all text-gray-900 font-mono"
                                     placeholder="KW/{YYYY}/{MM}/{DD}/{####}"

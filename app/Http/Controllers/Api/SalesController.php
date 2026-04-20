@@ -36,6 +36,13 @@ class SalesController extends Controller
             'email'    => 'required|email|unique:users,email',
             'password' => 'required|min:6',
             'phone'    => 'nullable|string',
+        ], [
+            'name.required'     => 'Nama marketing wajib diisi.',
+            'email.required'    => 'Email wajib diisi.',
+            'email.email'       => 'Format email tidak valid.',
+            'email.unique'      => 'Email sudah terdaftar. Silakan gunakan email lain.',
+            'password.required' => 'Password wajib diisi.',
+            'password.min'      => 'Password minimal 6 karakter.',
         ]);
 
         $owner = auth()->user();
@@ -73,6 +80,10 @@ class SalesController extends Controller
             'email'    => 'nullable|email|unique:users,email,' . $salesStaff->user_id,
             'password' => 'nullable|min:6',
             'phone'    => 'nullable|string',
+        ], [
+            'email.email'  => 'Format email tidak valid.',
+            'email.unique' => 'Email sudah terdaftar. Silakan gunakan email lain.',
+            'password.min' => 'Password minimal 6 karakter.',
         ]);
 
         $salesStaff->user->update([

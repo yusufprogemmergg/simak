@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from '../../lib/axios';
 import { useOutletContext } from 'react-router-dom';
 import { FiDownload, FiPlus, FiEdit, FiTrash2, FiX, FiSearch } from 'react-icons/fi';
+import Toast from '../../components/ui/Toast';
+import { useToast } from '../../hooks/useToast';
 
 export default function Kavling() {
     const { user } = useOutletContext();
@@ -35,15 +37,14 @@ export default function Kavling() {
         total_units: 10
     });
     
-    const [error, setError] = useState(null);
-    const [success, setSuccess] = useState(null);
+    const { toast, showToast } = useToast();
 
     useEffect(() => {
         if (user?.role === 'owner') {
             fetchInitialData();
         } else {
             setLoading(false);
-            setError("Anda tidak memiliki akses ke halaman ini.");
+            showToast("Anda tidak memiliki akses ke halaman ini.", "error");
         }
     }, [user]);
 
@@ -57,7 +58,7 @@ export default function Kavling() {
             setKavlings(kavRes.data);
             setProjects(projRes.data);
         } catch (err) {
-            setError(err.response?.data?.message || 'Gagal memuat data');
+            showToast(err.response?.data?.message || 'Gagal memuat data', 'error');
         } finally {
             setLoading(false);
         }
@@ -101,7 +102,6 @@ export default function Kavling() {
 
     const handleCloseModal = () => {
         setShowModal(false);
-        setError(null);
     };
 
     const handleOpenProjectModal = () => {
@@ -134,7 +134,6 @@ export default function Kavling() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError(null);
         try {
             const payload = {
                 project_id: form.project_id,
@@ -146,15 +145,20 @@ export default function Kavling() {
 
             if (isEdit) {
                 await axios.post(`/api/master/kavling/${form.id}`, payload);
-                setSuccess('Berhasil memperbarui kavling');
+                showToast('Berhasil memperbarui kavling');
             } else {
                 await axios.post('/api/master/kavling', payload);
-                setSuccess('Berhasil menambahkan kavling');
+                showToast('Berhasil menambahkan kavling');
             }
             handleCloseModal();
             fetchInitialData();
         } catch (err) {
-            setError(err.response?.data?.message || 'Gagal menyimpan kavling');
+            const errors = err.response?.data?.errors;
+            if (errors) {
+                showToast(Object.values(errors).flat().join('\n'), 'error');
+            } else {
+                showToast(err.response?.data?.message || 'Gagal menyimpan kavling', 'error');
+            }
         }
     };
 
@@ -179,9 +183,14 @@ export default function Kavling() {
             }));
             
             handleCloseProjectModal();
-            setSuccess('Project baru berhasil ditambahkan');
+            showToast('Project baru berhasil ditambahkan');
         } catch (err) {
-            alert(err.response?.data?.message || 'Gagal menyimpan project');
+            const errors = err.response?.data?.errors;
+            if (errors) {
+                showToast(Object.values(errors).flat().join('\n'), 'error');
+            } else {
+                showToast(err.response?.data?.message || 'Gagal menyimpan project', 'error');
+            }
         }
     };
 
@@ -189,10 +198,10 @@ export default function Kavling() {
         if (!confirm('Hapus kavling ini?')) return;
         try {
             await axios.delete(`/api/master/kavling/${id}`);
-            setSuccess('Kavling berhasil dihapus');
+            showToast('Kavling berhasil dihapus');
             fetchInitialData();
         } catch (err) {
-            alert(err.response?.data?.message || 'Gagal menghapus');
+            showToast(err.response?.data?.message || 'Gagal menghapus kavling', 'error');
         }
     };
 
@@ -210,7 +219,7 @@ export default function Kavling() {
             link.parentNode.removeChild(link);
         } catch (error) {
             console.error('Export failed', error);
-            alert('Gagal mengexport data');
+            showToast('Gagal mengexport data', 'error');
         }
     };
 
@@ -250,16 +259,7 @@ export default function Kavling() {
                 </div>
             </div>
 
-            {success && (
-                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl relative shadow-sm" role="alert">
-                    <span className="block sm:inline">{success}</span>
-                    <button className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setSuccess(null)}>
-                        <FiX className="h-5 w-5 text-green-600" />
-                    </button>
-                </div>
-            )}
-            
-            {error && <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 shadow-sm">{error}</div>}
+            <Toast toast={toast} />
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-4 border-b border-gray-50">
@@ -326,69 +326,46 @@ export default function Kavling() {
             {showModal && (
                 <div className="fixed inset-0 z-50 overflow-y-auto">
                     <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
-                        <div className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onClick={handleCloseModal}></div>
-                        <div className="relative inline-block w-full max-w-md p-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">{isEdit ? 'Edit Kavling' : 'Kavling Baru'}</h3>
-                            <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onClick={handleCloseModal} />
+                        <div className="relative inline-block w-full max-w-lg p-0 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-[1rem] border border-gray-100">
+                            {/* Header */}
+                            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-30">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900">{isEdit ? 'Edit Kavling' : 'Kavling Baru'}</h3>
+                                    <p className="text-gray-500 text-xs mt-1">Isi informasi unit kavling dengan benar</p>
+                                </div>
+                                <button onClick={handleCloseModal} className="p-2 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-2xl transition-all">
+                                    <FiX className="w-5 h-5" />
+                                </button>
+                            </div>
+                            {/* Body */}
+                            <form onSubmit={handleSubmit} className="px-8 py-6 space-y-5 max-h-[65vh] overflow-y-auto bg-gray-50/20">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Project</label>
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Project</label>
                                     <div className="flex gap-2">
-                                        <select 
-                                            name="project_id"
-                                            required 
-                                            className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                            value={form.project_id} 
-                                            onChange={handleChange}
-                                        >
+                                        <select name="project_id" required className="flex-1 bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={form.project_id} onChange={handleChange}>
                                             <option value="">Pilih Project</option>
                                             {projects.map(p => (
                                                 <option key={p.id} value={p.id}>{p.name}</option>
                                             ))}
                                         </select>
-                                        <button 
-                                            type="button"
-                                            onClick={handleOpenProjectModal}
-                                            className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 hover:text-gray-600 transition-colors border border-gray-200 shadow-sm"
-                                            title="Tambah Project Baru"
-                                        >
+                                        <button type="button" onClick={handleOpenProjectModal} className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 hover:text-[#901C31] transition-colors border border-gray-200" title="Tambah Project Baru">
                                             <FiPlus className="w-5 h-5" />
                                         </button>
                                     </div>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Blok / Nomor</label>
-                                    <input 
-                                        name="plot_number" 
-                                        required 
-                                        placeholder="Ex: A-01"
-                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                        value={form.plot_number} 
-                                        onChange={handleChange} 
-                                    />
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Blok / Nomor Unit</label>
+                                    <input name="plot_number" required placeholder="Contoh: A-01" className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={form.plot_number} onChange={handleChange} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Luas (m2)</label>
-                                        <input 
-                                            type="number"
-                                            step="0.01"
-                                            name="area" 
-                                            required 
-                                            placeholder="60"
-                                            className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                            value={form.area} 
-                                            onChange={handleChange} 
-                                        />
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Luas (m²)</label>
+                                        <input type="number" step="0.01" name="area" required placeholder="60" className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={form.area} onChange={handleChange} />
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Status</label>
-                                        <select 
-                                            name="status"
-                                            required 
-                                            className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                            value={form.status} 
-                                            onChange={handleChange}
-                                        >
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Status</label>
+                                        <select name="status" required className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={form.status} onChange={handleChange}>
                                             <option value="available">Available</option>
                                             <option value="sold">Sold</option>
                                             <option value="reserved">Reserved</option>
@@ -397,24 +374,17 @@ export default function Kavling() {
                                     </div>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Harga Dasar (Rp)</label>
-                                    <input 
-                                        type="number"
-                                        name="base_price" 
-                                        required 
-                                        placeholder="150000000"
-                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                        value={form.base_price} 
-                                        onChange={handleChange} 
-                                    />
-                                </div>
-                                <div className="pt-6 flex justify-end gap-3 border-t border-gray-100 mt-6">
-                                    <button type="button" onClick={handleCloseModal} className="px-6 py-2 text-sm font-bold text-gray-500 hover:text-gray-700">Batal</button>
-                                    <button type="submit" className="px-8 py-2.5 bg-[#901C31] text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/20 hover:bg-red-900 transition-all">
-                                        {isEdit ? 'Update Kavling' : 'Simpan Kavling'}
-                                    </button>
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Harga Dasar (Rp)</label>
+                                    <input type="number" name="base_price" required placeholder="150000000" className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={form.base_price} onChange={handleChange} />
                                 </div>
                             </form>
+                            {/* Footer */}
+                            <div className="px-8 py-5 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white z-30">
+                                <button type="button" onClick={handleCloseModal} className="px-6 py-2.5 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors">Batal</button>
+                                <button onClick={handleSubmit} className="px-10 py-2.5 bg-[#901C31] text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/20 hover:bg-red-900 transition-all">
+                                    {isEdit ? 'Update Kavling' : 'Simpan Kavling'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -424,50 +394,40 @@ export default function Kavling() {
             {showProjectModal && (
                 <div className="fixed inset-0 z-[60] overflow-y-auto">
                     <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
-                        <div className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onClick={handleCloseProjectModal}></div>
-                        <div className="relative inline-block w-full max-w-md p-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-3xl border border-gray-100">
-                            <h3 className="text-xl font-bold text-gray-900 mb-6">Tambah Project Baru</h3>
-                            <form onSubmit={handleProjectSubmit} className="space-y-4">
+                        <div className="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onClick={handleCloseProjectModal} />
+                        <div className="relative inline-block w-full max-w-lg p-0 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-2xl rounded-[1rem] border border-gray-100">
+                            {/* Header */}
+                            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-30">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900">Tambah Project Baru</h3>
+                                    <p className="text-gray-500 text-xs mt-1">Project akan langsung tersedia di dropdown kavling</p>
+                                </div>
+                                <button onClick={handleCloseProjectModal} className="p-2 bg-gray-50 text-gray-400 hover:text-gray-900 rounded-2xl transition-all">
+                                    <FiX className="w-5 h-5" />
+                                </button>
+                            </div>
+                            {/* Body */}
+                            <form onSubmit={handleProjectSubmit} className="px-8 py-6 space-y-5 max-h-[65vh] overflow-y-auto bg-gray-50/20">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nama Project</label>
-                                    <input 
-                                        name="name" 
-                                        required 
-                                        placeholder="Ex: Perumahan Indah"
-                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                        value={projectForm.name} 
-                                        onChange={handleProjectChange} 
-                                    />
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Nama Project</label>
+                                    <input name="name" required placeholder="Contoh: Perumahan Indah" className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={projectForm.name} onChange={handleProjectChange} />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Lokasi</label>
-                                    <input 
-                                        name="location" 
-                                        required 
-                                        placeholder="Ex: Jl. Merdeka Kav. 12"
-                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                        value={projectForm.location} 
-                                        onChange={handleProjectChange} 
-                                    />
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Lokasi</label>
+                                    <input name="location" required placeholder="Contoh: Jl. Merdeka Kav. 12" className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={projectForm.location} onChange={handleProjectChange} />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Unit</label>
-                                    <input 
-                                        type="number"
-                                        name="total_units" 
-                                        required 
-                                        className="w-full border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/20 focus:border-[#901C31]" 
-                                        value={projectForm.total_units} 
-                                        onChange={handleProjectChange} 
-                                    />
-                                </div>
-                                <div className="pt-6 flex justify-end gap-3 border-t border-gray-100 mt-6">
-                                    <button type="button" onClick={handleCloseProjectModal} className="px-6 py-2 text-sm font-bold text-gray-500 hover:text-gray-700">Batal</button>
-                                    <button type="submit" className="px-8 py-2.5 bg-[#901C31] text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/20 hover:bg-red-900 transition-all">
-                                        Simpan Project
-                                    </button>
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Total Unit (Target)</label>
+                                    <input type="number" name="total_units" required className="w-full bg-white border-gray-200 rounded-xl py-3 text-sm focus:ring-[#901C31]/10 focus:border-[#901C31]" value={projectForm.total_units} onChange={handleProjectChange} />
                                 </div>
                             </form>
+                            {/* Footer */}
+                            <div className="px-8 py-5 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white z-30">
+                                <button type="button" onClick={handleCloseProjectModal} className="px-6 py-2.5 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors">Batal</button>
+                                <button onClick={handleProjectSubmit} className="px-10 py-2.5 bg-[#901C31] text-white rounded-xl font-bold text-sm shadow-lg shadow-red-900/20 hover:bg-red-900 transition-all">
+                                    Simpan Project
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

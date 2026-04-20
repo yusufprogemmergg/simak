@@ -38,6 +38,14 @@ class ProfilePerusahaanController extends Controller
             'print_footer'         => 'nullable|string',
             'invoice_format'       => ['required', 'string'],
             'receipt_format'       => ['required', 'string'],
+        ], [
+            'name.required'           => 'Nama perusahaan wajib diisi.',
+            'npwp.regex'              => 'Format NPWP tidak valid (contoh: 00.000.000.0-000.000).',
+            'email.email'             => 'Format email tidak valid.',
+            'logo_path.image'         => 'Logo harus berupa gambar.',
+            'logo_path.max'           => 'Ukuran logo maksimal 2MB.',
+            'invoice_format.required' => 'Format faktur wajib diisi.',
+            'receipt_format.required' => 'Format kuitansi wajib diisi.',
         ]);
 
         $user = auth()->user();
@@ -82,6 +90,11 @@ class ProfilePerusahaanController extends Controller
             'print_footer'         => 'nullable|string',
             'invoice_format'       => ['sometimes', 'string'],
             'receipt_format'       => ['sometimes', 'string'],
+        ], [
+            'npwp.regex'      => 'Format NPWP tidak valid (contoh: 00.000.000.0-000.000).',
+            'email.email'     => 'Format email tidak valid.',
+            'logo_path.image' => 'Logo harus berupa gambar.',
+            'logo_path.max'   => 'Ukuran logo maksimal 2MB.',
         ]);
 
         if ($request->hasFile('logo_path')) {

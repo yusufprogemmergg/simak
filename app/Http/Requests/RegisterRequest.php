@@ -20,4 +20,18 @@ class RegisterRequest extends FormRequest
             'license_key' => 'required|string'
         ];
     }
+
+    public function messages(): array
+    {
+        return [
+            'username.required'    => 'Username wajib diisi.',
+            'username.max'         => 'Username maksimal 100 karakter.',
+            'email.required'       => 'Email wajib diisi.',
+            'email.email'          => 'Format email tidak valid.',
+            'email.unique'         => 'Email sudah terdaftar.',
+            'password.required'    => 'Password wajib diisi.',
+            'password.min'         => 'Password minimal 6 karakter.',
+            'license_key.required' => 'License key wajib diisi.',
+        ];
+    }
 }

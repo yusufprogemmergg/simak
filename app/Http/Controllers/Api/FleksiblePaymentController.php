@@ -28,6 +28,12 @@ class FleksiblePaymentController extends Controller
             'amount'         => 'required|numeric|min:1',
             'paid_date'      => 'required|date',
             'notes'          => 'nullable|string',
+        ], [
+            'amount.required'    => 'Nominal pembayaran wajib diisi.',
+            'amount.numeric'     => 'Nominal pembayaran harus berupa angka.',
+            'amount.min'         => 'Nominal pembayaran minimal Rp 1.',
+            'paid_date.required' => 'Tanggal pembayaran wajib diisi.',
+            'paid_date.date'     => 'Format tanggal tidak valid.',
         ]);
 
         // Pastikan transaksi milik owner yang sedang login

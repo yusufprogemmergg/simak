@@ -38,6 +38,11 @@ class ProjectController extends Controller
             'location'    => 'required|string',
             'notes'       => 'nullable|string',
             'total_units' => 'required|integer',
+        ], [
+            'name.required'        => 'Nama project wajib diisi.',
+            'location.required'    => 'Lokasi project wajib diisi.',
+            'total_units.required' => 'Total unit wajib diisi.',
+            'total_units.integer'  => 'Total unit harus berupa angka.',
         ]);
 
         $data = Project::create([
@@ -62,6 +67,8 @@ class ProjectController extends Controller
             'location'    => 'sometimes|string',
             'notes'       => 'nullable|string',
             'total_units' => 'sometimes|integer',
+        ], [
+            'total_units.integer'  => 'Total unit harus berupa angka.',
         ]);
 
         $project = Project::where('id', $id)

@@ -130,8 +130,8 @@
                             <td class="company-details">
                                 <div class="company-name">{{ $profile ? $profile->name : 'NAMA PERUSAHAAN' }}</div>
                                 <div class="company-contact">
-                                    {{ $profile ? $profile->alamat : 'Alamat Perusahaan' }}<br>
-                                    Telp: {{ $profile ? $profile->telepon : '-' }} | Email: {{ $profile ? $profile->email : '-' }}
+                                    {{ $profile ? $profile->address : 'Alamat Perusahaan' }}<br>
+                                    Telp: {{ $profile ? $profile->phone : '-' }} | Email: {{ $profile ? $profile->email : '-' }}
                                 </div>
                             </td>
                         </tr>
@@ -151,7 +151,7 @@
         <tr>
             <td class="col-label">Telah Diterima Dari</td>
             <td class="col-colon">:</td>
-            <td class="col-value">{{ $buyer ? $buyer->nama : '-' }}</td>
+            <td class="col-value">{{ $buyer ? $buyer->name : '-' }}</td>
         </tr>
         <tr>
             <td class="col-label">Uang Sejumlah</td>
@@ -161,17 +161,17 @@
         <tr>
             <td class="col-label">Untuk Pembayaran</td>
             <td class="col-colon">:</td>
-            <td class="col-value">{{ $payment->keterangan }}</td>
+            <td class="col-value">{{ $payment->notes }}</td>
         </tr>
         <tr>
-            <td class="col-label">Blok</td>
+            <td class="col-label">No. Unit / Blok</td>
             <td class="col-colon">:</td>
-            <td class="col-value">{{ $kavling ? $kavling->blok_nomor : '-' }}</td>
+            <td class="col-value">{{ $plot ? $plot->plot_number : '-' }}</td>
         </tr>
         <tr>
-            <td class="col-label">Kavling</td>
+            <td class="col-label">Proyek</td>
             <td class="col-colon">:</td>
-            <td class="col-value">{{ $project ? $project->nama_project : '-' }}</td>
+            <td class="col-value">{{ $project ? $project->name : '-' }}</td>
         </tr>
     </table>
 
@@ -187,12 +187,12 @@
                     <table class="signature-area" align="right">
                         <tr>
                             <td class="signature-date">
-                                {{ date('d M Y', strtotime($payment->tanggal)) }}
+                                {{ date('d M Y', strtotime($payment->date)) }}
                             </td>
                         </tr>
                         <tr>
                             <td class="signature-name">
-                                {{ $profile ? $profile->nama_ttd_admin : 'Admin' }}
+                                {{ $profile ? $profile->admin_signature_name : 'Admin' }}
                             </td>
                         </tr>
                     </table>
@@ -201,9 +201,9 @@
         </table>
     </div>
 
-    @if($profile && $profile->catatan_kaki_cetakan)
+    @if($profile && $profile->print_footer)
     <div class="footer-note">
-        {{ $profile->catatan_kaki_cetakan }}
+        {{ $profile->print_footer }}
     </div>
     @endif
 

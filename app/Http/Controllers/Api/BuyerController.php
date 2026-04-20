@@ -34,6 +34,14 @@ class BuyerController extends Controller
             'email'   => 'nullable|email|max:255',
             'address' => 'nullable|string',
             'nik'     => 'nullable|string|max:30',
+        ], [
+            'name.required'  => 'Nama lengkap wajib diisi.',
+            'name.max'       => 'Nama lengkap maksimal 255 karakter.',
+            'phone.required' => 'Nomor telepon wajib diisi.',
+            'phone.max'      => 'Nomor telepon maksimal 20 karakter.',
+            'email.email'    => 'Format email tidak valid.',
+            'email.max'      => 'Email maksimal 255 karakter.',
+            'nik.max'        => 'NIK maksimal 30 karakter.',
         ]);
 
         $user = auth()->user();
@@ -61,6 +69,12 @@ class BuyerController extends Controller
             'email'   => 'nullable|email|max:255',
             'address' => 'nullable|string',
             'nik'     => 'nullable|string|max:30',
+        ], [
+            'name.max'       => 'Nama lengkap maksimal 255 karakter.',
+            'phone.max'      => 'Nomor telepon maksimal 20 karakter.',
+            'email.email'    => 'Format email tidak valid.',
+            'email.max'      => 'Email maksimal 255 karakter.',
+            'nik.max'        => 'NIK maksimal 30 karakter.',
         ]);
 
         $user  = auth()->user();
