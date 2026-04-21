@@ -400,4 +400,70 @@ class SalesTransactionController extends Controller
             ], 500);
         }
     }
+
+    // WHATSAPP BILL (TAGIHAN TERATAS)
+    public function generateWhatsappBill($id)
+    {
+        $transaction = $this->ownerQuery()->with(['plot', 'buyer', 'installments' => function($q) {
+            $q->orderBy('due_date', 'asc');
+        }])->findOrFail($id);
+
+        $buyer = $transaction->buyer;
+        if (!$buyer || !$buyer->phone) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nomor WhatsApp pembeli tidak ditemukan.'
+            ], 400);
+        }
+
+        // Format phone number (ubah awalan 0 atau +62 menjadi 62)
+        $phone = preg_replace('/[^0-9]/', '', $buyer->phone);
+        if (substr($phone, 0, 1) === '0') {
+            $phone = '62' . substr($phone, 1);
+        } elseif (substr($phone, 0, 2) !== '62') {
+             // Jika entah bagaimana depannya bukan 0 dan bukan 62, asumsikan 62 ditambahkan
+             // Tapi umumnya nomor Indo yg diinput tanpa 0 mulai dari 8
+             $phone = '62' . $phone;
+        }
+
+        $plotNumber = $transaction->plot ? $transaction->plot->plot_number : 'kavling/rumah';
+        $message = "Halo Bapak/Ibu {$buyer->name},\n\nKami dari manajemen ingin mengingatkan mengenai tagihan pembelian unit {$plotNumber}.\n\n";
+
+        // Find top unpaid
+        if ($transaction->payment_method === 'installment') {
+            // First installment that is not paid
+            $topBill = $transaction->installments->whereIn('status', ['unpaid', 'partial'])->first();
+            if ($topBill) {
+                $message .= "Tagihan : Angsuran Ke-{$topBill->installment_number}\n";
+                $message .= "Jatuh Tempo : " . $topBill->due_date->format('d M Y') . "\n";
+                $message .= "Nominal : Rp " . number_format($topBill->remaining_amount, 0, ',', '.') . "\n\n";
+            } else {
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Tidak ada tagihan angsuran yang tertunggak (semua lunas).'
+                ], 400);
+            }
+        } else {
+            // Cash / DP payment
+            $remaining = $transaction->remainingBalance();
+            if ($remaining > 0) {
+                $message .= "Sisa Tagihan / DP : Rp " . number_format($remaining, 0, ',', '.') . "\n\n";
+            } else {
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Transaksi pembayaran ini sudah lunas.'
+                ], 400);
+            }
+        }
+
+        $message .= "Mohon untuk dapat melakukan pelunasan ke rekening perusahaan kami.\nAbaikan pesan ini jika Bapak/Ibu sudah merasa melakukan pembayaran.\n\nTerima kasih banyak.";
+
+        $url = "https://wa.me/{$phone}?text=" . rawurlencode($message);
+
+        return response()->json([
+            'success'      => true,
+            'whatsapp_url' => $url,
+            'message'      => 'Tautan WhatsApp Web/App berhasil dibuat.'
+        ]);
+    }
 }

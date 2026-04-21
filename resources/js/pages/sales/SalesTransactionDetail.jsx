@@ -3,7 +3,7 @@ import axios from '../../lib/axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
     FiArrowLeft, FiEdit, FiClock, FiCheckCircle, FiAlertCircle, 
-    FiPlus, FiPrinter, FiCalendar, FiTrash2, FiInfo, FiX, FiUserPlus, FiRotateCcw
+    FiPlus, FiPrinter, FiCalendar, FiTrash2, FiInfo, FiX, FiUserPlus, FiRotateCcw, FiMessageCircle
 } from 'react-icons/fi';
 import SalesModal from '../../components/sales/SalesModal';
 import Toast from '../../components/ui/Toast';
@@ -156,6 +156,19 @@ export default function SalesTransactionDetail() {
         });
     };
 
+    const handleWhatsAppBill = async () => {
+        try {
+            const res = await axios.get(`/api/master/sales-transaction/${id}/whatsapp-bill`);            
+            if (res.data.success && res.data.whatsapp_url) {
+                window.open(res.data.whatsapp_url, '_blank');
+            } else {
+                showToast(res.data.message || 'Gagal membuat tautan WhatsApp', 'error');
+            }
+        } catch (err) {
+            showToast(err.response?.data?.message || 'Gagal menghubungi server WhatsApp', 'error');
+        }
+    };
+
     if (loading) return (
         <div className="flex items-center justify-center min-h-[60vh]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#901C31]" />
@@ -214,15 +227,21 @@ export default function SalesTransactionDetail() {
                 <button onClick={() => navigate('/penjualan')} className="flex items-center text-gray-500 hover:text-[#901C31] transition-colors font-medium text-sm">
                     <FiArrowLeft className="mr-2" /> Kembali ke Daftar Penjualan
                 </button>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                    <button 
+                        onClick={handleWhatsAppBill}
+                        className="flex items-center px-4 py-2 border border-green-600 text-green-700 bg-green-50 hover:bg-green-600 hover:text-white rounded-lg font-medium text-sm transition-all shadow-sm"
+                    >
+                        <FiMessageCircle className="mr-2" /> Tagihan WA
+                    </button>
                     <button 
                         onClick={() => setShowCancelModal(true)}
                         className="flex items-center px-4 py-2 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg font-medium text-sm transition-all shadow-sm"
                     >
-                        <FiTrash2 className="mr-2" /> Batalkan Penjualan
+                        <FiTrash2 className="mr-2" /> Batalkan
                     </button>
                     <button onClick={() => setShowEditModal(true)} className="flex items-center px-4 py-2 bg-[#901C31] text-white rounded-lg hover:bg-red-900 font-medium text-sm transition-all shadow-sm">
-                        <FiEdit className="mr-2" /> Edit Transaksi
+                        <FiEdit className="mr-2" /> Edit
                     </button>
                 </div>
             </div>

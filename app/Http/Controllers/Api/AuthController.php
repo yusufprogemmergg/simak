@@ -10,7 +10,12 @@ use App\Models\UserLicense;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ResetPasswordMail;
 
 class AuthController extends Controller
 {
@@ -150,5 +155,105 @@ class AuthController extends Controller
         }
         
         return response()->json(['message' => 'Logout success']);
+    }
+
+    /**
+     * FORGOT PASSWORD
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email'
+        ], [
+            'email.required' => 'Email wajib diisi.',
+            'email.email'    => 'Format email tidak valid.',
+            'email.exists'   => 'Email tidak ditemukan dalam sistem.'
+        ]);
+
+        try {
+            $user = User::where('email', $request->email)->first();
+            
+            // Generate token
+            $token = Str::random(60);
+
+            // Save to password_reset_tokens
+            DB::table('password_reset_tokens')->updateOrInsert(
+                ['email' => $user->email],
+                [
+                    'email'      => $user->email,
+                    'token'      => Hash::make($token),
+                    'created_at' => now()
+                ]
+            );
+
+            // Create URL (Frontend route usually /reset-password)
+            $frontendUrl = env('APP_URL') . '/reset-password?token=' . $token . '&email=' . urlencode($user->email);
+
+            // Send Email
+            Mail::to($user->email)->send(new ResetPasswordMail($user, $frontendUrl));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tautan reset password telah dikirim ke email Anda.'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Forgot password error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengirim email reset password.',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * RESET PASSWORD
+     */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email'    => 'required|email|exists:users,email',
+            'token'    => 'required|string',
+            'password' => 'required|string|min:6|confirmed',
+        ], [
+            'password.confirmed' => 'Konfirmasi password tidak cocok.',
+            'password.min'       => 'Password minimal 6 karakter.'
+        ]);
+
+        try {
+            $resetRecord = DB::table('password_reset_tokens')
+                ->where('email', $request->email)
+                ->first();
+
+            if (!$resetRecord || !Hash::check($request->token, $resetRecord->token)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Token reset password tidak valid atau sudah kedaluwarsa.'
+                ], 400);
+            }
+
+            // Update user password
+            $user = User::where('email', $request->email)->first();
+            $user->update([
+                'password' => Hash::make($request->password)
+            ]);
+
+            // Clear token
+            DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password berhasil diubah. Silakan login kembali.'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Reset password error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mereset password.',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
 }

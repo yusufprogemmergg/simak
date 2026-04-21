@@ -80,9 +80,9 @@ export default function Login() {
                         </label>
                     </div>
                     <div className="text-sm">
-                        <a href="#" className="font-medium text-[#901C31] hover:text-red-800">
+                        <Link to="/forgot-password" className="font-medium text-[#901C31] hover:text-red-800">
                             Lupa password?
-                        </a>
+                        </Link>
                     </div>
                 </div>
 
